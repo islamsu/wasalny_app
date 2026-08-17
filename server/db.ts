@@ -1,6 +1,6 @@
 import { desc, eq, gt, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { driverProfiles, InsertUser, pushTokens, rides, users } from "../drizzle/schema";
+import { adminSettings, auditLogs, driverProfiles, InsertUser, pushTokens, rides, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -25,3 +25,7 @@ export async function listNearbyDrivers(lat: number, lng: number) { const db = a
 export async function updateRideStatus(id: number, status: "accepted" | "arriving" | "active" | "completed" | "cancelled", driverUserId?: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.update(rides).set({ status, driverUserId, acceptedAt: status === "accepted" ? new Date() : undefined, completedAt: status === "completed" ? new Date() : undefined }).where(eq(rides.id, id)); }
 export async function registerPushToken(input: typeof pushTokens.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.insert(pushTokens).values(input).onDuplicateKeyUpdate({ set: { userId: input.userId, platform: input.platform, updatedAt: new Date() } }); }
 export async function getPushTokens(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(pushTokens).where(eq(pushTokens.userId, userId)); }
+
+export async function listAdminSettings() { const db = await getDb(); if (!db) return []; return db.select().from(adminSettings).orderBy(adminSettings.settingKey); }
+export async function updateAdminSetting(input: { settingKey: string; settingValue: string; category: "pricing" | "permissions" | "subscription" | "notifications"; updatedBy: number }) { const db = await getDb(); if (!db) throw new Error("Database not available"); const existing = await db.select().from(adminSettings).where(eq(adminSettings.settingKey, input.settingKey)).limit(1); const beforeValue = existing[0]?.settingValue ?? null; if (existing[0]) await db.update(adminSettings).set({ settingValue: input.settingValue, category: input.category, updatedBy: input.updatedBy }).where(eq(adminSettings.settingKey, input.settingKey)); else await db.insert(adminSettings).values(input); await db.insert(auditLogs).values({ actorUserId: input.updatedBy, action: existing[0] ? "update" : "create", entityType: "admin_setting", entityId: input.settingKey, beforeValue, afterValue: input.settingValue, metadata: JSON.stringify({ category: input.category }) }); return (await db.select().from(adminSettings).where(eq(adminSettings.settingKey, input.settingKey)).limit(1))[0]; }
+export async function listAdminAuditLogs(limit = 50) { const db = await getDb(); if (!db) return []; return db.select().from(auditLogs).orderBy(desc(auditLogs.createdAt)).limit(limit); }

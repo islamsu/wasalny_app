@@ -67,3 +67,9 @@
 - [x] Save a verification report with pass/fail results and known limitations
 
 - [x] Audit and repair admin settings controls, navigation, and persistence
+
+- [x] Persist admin pricing and permissions settings in the database
+- [x] Add admin settings API procedures with authenticated admin checks
+- [x] Add database-backed audit log for all settings changes
+- [x] Connect settings UI to server data and show audit history
+- [ ] Restart and fully verify the admin settings preview

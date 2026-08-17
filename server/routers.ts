@@ -18,6 +18,13 @@ export const appRouter = router({
   drivers: router({
     nearby: protectedProcedure.input(z.object({ lat: z.number(), lng: z.number() })).query(({ input }) => db.listNearbyDrivers(input.lat, input.lng)),
   }),
+  admin: router({
+    settings: router({
+      list: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminSettings(); }),
+      update: protectedProcedure.input(z.object({ settingKey: z.string().min(1), settingValue: z.string().min(1), category: z.enum(["pricing", "permissions", "subscription", "notifications"]) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.updateAdminSetting({ ...input, updatedBy: ctx.user.id }); }),
+    }),
+    audit: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminAuditLogs(input.limit); }),
+  }),
   push: router({
     register: protectedProcedure.input(z.object({ token: z.string().min(10), platform: z.enum(["android", "ios", "web"]) })).mutation(({ ctx, input }) => db.registerPushToken({ userId: ctx.user.id, token: input.token, platform: input.platform })),
   }),

@@ -64,3 +64,28 @@ export type InsertUser = typeof users.$inferInsert;
 export type DriverProfile = typeof driverProfiles.$inferSelect;
 export type Ride = typeof rides.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
+
+export const adminSettings = mysqlTable("adminSettings", {
+  id: int("id").autoincrement().primaryKey(),
+  settingKey: varchar("settingKey", { length: 64 }).notNull().unique(),
+  settingValue: text("settingValue").notNull(),
+  category: mysqlEnum("category", ["pricing", "permissions", "subscription", "notifications"]).notNull(),
+  updatedBy: int("updatedBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const auditLogs = mysqlTable("auditLogs", {
+  id: int("id").autoincrement().primaryKey(),
+  actorUserId: int("actorUserId").notNull(),
+  action: varchar("action", { length: 64 }).notNull(),
+  entityType: varchar("entityType", { length: 64 }).notNull(),
+  entityId: varchar("entityId", { length: 64 }),
+  beforeValue: text("beforeValue"),
+  afterValue: text("afterValue"),
+  metadata: text("metadata"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type AdminSetting = typeof adminSettings.$inferSelect;
+export type AuditLog = typeof auditLogs.$inferSelect;

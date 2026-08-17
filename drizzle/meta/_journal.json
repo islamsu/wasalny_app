@@ -15,6 +15,13 @@
       "when": 1786971215733,
       "tag": "0001_confused_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786976898639,
+      "tag": "0002_optimal_senator_kelly",
+      "breakpoints": true
     }
   ]
 }
