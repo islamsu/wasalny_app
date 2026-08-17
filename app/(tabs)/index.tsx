@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import * as Location from "expo-location";
 import {
   Modal,
   Pressable,
@@ -10,6 +11,7 @@ import {
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { router } from "expo-router";
 import { useWasalnyState } from "@/lib/wasalny-state";
 import { useThemeContext } from "@/lib/theme-provider";
 
@@ -30,6 +32,9 @@ export default function HomeScreen() {
   const [vehicle, setVehicle] = useState<VehicleId | null>(null);
   const [stage, setStage] = useState<RideStage>("idle");
   const [showProfile, setShowProfile] = useState(false);
+  const [locationLabel, setLocationLabel] = useState("مدينة نصر، القاهرة");
+  const [locationStatus, setLocationStatus] = useState<"idle" | "detecting" | "ready" | "denied">("idle");
+  const [selectedNearbyDriver, setSelectedNearbyDriver] = useState<string | null>(null);
 
   const selectedVehicle = useMemo(
     () => vehicleOptions.find((item) => item.id === vehicle),
@@ -44,6 +49,16 @@ export default function HomeScreen() {
   const resetRide = () => {
     setVehicle(null);
     setStage("idle");
+    setSelectedNearbyDriver(null);
+  };
+
+  const detectLocation = async () => {
+    setLocationStatus("detecting");
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (permission.status !== "granted") { setLocationStatus("denied"); return; }
+    const current = await Location.getCurrentPositionAsync({});
+    setLocationLabel(`${current.coords.latitude.toFixed(4)}، ${current.coords.longitude.toFixed(4)}`);
+    setLocationStatus("ready");
   };
 
   return (
@@ -78,9 +93,9 @@ export default function HomeScreen() {
             <View style={[styles.locationDot, { backgroundColor: colors.primary }]} />
             <View style={styles.locationTextBlock}>
               <Text style={[styles.overline, { color: colors.muted }]}>موقعك الحالي</Text>
-              <Text style={[styles.locationTitle, { color: colors.foreground }]}>مدينة نصر، القاهرة</Text>
+              <Text style={[styles.locationTitle, { color: colors.foreground }]}>{locationLabel}</Text>
             </View>
-            <Text style={[styles.detected, { color: colors.success }]}>تم التحديد</Text>
+            <Pressable onPress={detectLocation}><Text style={[styles.detected, { color: locationStatus === "denied" ? colors.error : colors.success }]}>{locationStatus === "detecting" ? "جاري التحديد" : locationStatus === "denied" ? "السماح بالموقع" : "تحديث الموقع"}</Text></Pressable>
           </View>
           <View style={[styles.mapPreview, { backgroundColor: colors.background }]}>
             <View style={[styles.mapRoad, styles.roadOne]} />
@@ -92,6 +107,8 @@ export default function HomeScreen() {
             <Text style={[styles.mapLabel, { color: colors.muted }]}>اسحب العلامة لتعديل مكان الركوب</Text>
           </View>
         </View>
+
+        <View style={[styles.nearbyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sectionHeading}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>سائقين قريبين منك</Text><Text style={[styles.linkText, { color: colors.primary }]}>١٢ متاح الآن</Text></View>{[{ id: "ahmed", name: "أحمد حسن", vehicle: "سيارة", distance: "٠.٨ كم", eta: "٤ د", icon: "🚗" }, { id: "khaled", name: "خالد علي", vehicle: "توك توك", distance: "١.٢ كم", eta: "٦ د", icon: "🛺" }].map((driver) => <Pressable key={driver.id} onPress={() => { setSelectedNearbyDriver(driver.id); setVehicle(driver.vehicle === "سيارة" ? "car" : "toktok"); setStage("request"); }} style={[styles.nearbyRow, { borderTopColor: colors.border, backgroundColor: selectedNearbyDriver === driver.id ? "#E8F5EE" : colors.surface }]}><Text style={[styles.driverEta, { color: colors.primary }]}>{driver.eta}</Text><View style={styles.driverCopy}><Text style={[styles.driverName, { color: colors.foreground }]}>{driver.name}</Text><Text style={[styles.driverMeta, { color: colors.muted }]}>{driver.vehicle} · {driver.distance}</Text></View><Text style={styles.driverIcon}>{driver.icon}</Text></Pressable>)}</View>
 
         <View style={styles.sectionHeading}>
           <View>
@@ -125,14 +142,14 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        <View style={[styles.safetyCard, { backgroundColor: "#E8F5EE" }]}>
+        <Pressable onPress={() => router.push("/complaints" as any)} style={[styles.safetyCard, { backgroundColor: "#E8F5EE" }]}>
           <Text style={styles.safetyIcon}>🛡️</Text>
           <View style={styles.safetyCopy}>
             <Text style={[styles.safetyTitle, { color: colors.foreground }]}>مشوارك في أمان</Text>
             <Text style={[styles.safetyText, { color: colors.muted }]}>كل سائق عندنا متراجع وموثق قبل ما يبدأ</Text>
           </View>
           <Text style={[styles.safetyArrow, { color: colors.primary }]}>‹</Text>
-        </View>
+        </Pressable>
 
         <View style={styles.recentHeader}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>آخر مشوار</Text>
@@ -182,7 +199,7 @@ export default function HomeScreen() {
             ))}
             <View style={[styles.fontSetting, { borderColor: colors.border, backgroundColor: colors.surface }]}><Text style={[styles.settingText, { color: colors.foreground }]}>حجم الخط</Text><View style={styles.fontChoices}>{[[1, "عادي"], [1.12, "كبير"], [1.25, "كبير جداً"]].map(([scale, label]) => <Pressable key={String(scale)} onPress={() => setFontScale(Number(scale))} style={[styles.fontChoice, { borderColor: fontScale === scale ? colors.primary : colors.border, backgroundColor: fontScale === scale ? "#E8F5EE" : colors.background }]}><Text style={[styles.fontChoiceText, { color: fontScale === scale ? colors.primary : colors.muted }]}>{label}</Text></Pressable>)}</View></View>
             <View style={[styles.themeSetting, { borderColor: colors.border, backgroundColor: colors.surface }]}><View style={styles.themeHeader}><Text style={[styles.settingText, { color: colors.foreground }]}>معاينة الوضع الليلي</Text><Text style={[styles.themeStatus, { color: colors.primary }]}>{colorScheme === "dark" ? "ليلي" : "نهاري"}</Text></View><View style={[styles.themePreview, { backgroundColor: colorScheme === "dark" ? "#0D1B15" : "#F8FBF8", borderColor: colorScheme === "dark" ? "#3B604E" : colors.border }]}><Text style={{ color: colorScheme === "dark" ? "#F7FCF8" : colors.foreground, fontFamily: "Cairo_700Bold" }}>وصلني · أقرب... أوفر... أأمن</Text><Text style={{ color: colorScheme === "dark" ? "#C2D2C9" : colors.muted, fontSize: 10, marginTop: 3 }}>هكذا ستظهر النصوص في التطبيق</Text></View><View style={styles.themeChoices}><Pressable onPress={() => setColorScheme("light")} style={[styles.themeChoice, { borderColor: colorScheme === "light" ? colors.primary : colors.border, backgroundColor: colorScheme === "light" ? "#E8F5EE" : colors.background }]}><Text style={{ color: colorScheme === "light" ? colors.primary : colors.muted }}>☀ نهاري</Text></Pressable><Pressable onPress={() => setColorScheme("dark")} style={[styles.themeChoice, { borderColor: colorScheme === "dark" ? colors.primary : colors.border, backgroundColor: colorScheme === "dark" ? "#214735" : colors.background }]}><Text style={{ color: colorScheme === "dark" ? "#F7FCF8" : colors.muted }}>☾ ليلي</Text></Pressable></View></View>
-            <Pressable onPress={() => setShowProfile(false)} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>إغلاق</Text></Pressable>
+            <Pressable onPress={() => router.push("/login" as any)} style={[styles.loginButton, { backgroundColor: colors.primary }]}><Text style={styles.loginButtonText}>تبديل الحساب أو الدخول بدور آخر</Text></Pressable><Pressable onPress={() => setShowProfile(false)} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>إغلاق</Text></Pressable>
           </View>
         </View>
       </Modal>
@@ -268,7 +285,7 @@ const styles = StyleSheet.create({
   mapLabel: { position: "absolute", bottom: 10, right: 12, fontSize: 10 },
   sectionHeading: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 2 },
   sectionTitle: { fontFamily: "Cairo_800ExtraBold", fontSize: 18, fontWeight: "800", textAlign: "right" },
-  sectionSubtitle: { fontSize: 12, marginTop: 4, textAlign: "right" },
+  sectionSubtitle: { fontSize: 12, marginTop: 4, textAlign: "right" }, nearbyCard: { borderWidth: 1, borderRadius: 20, padding: 14, gap: 10 }, linkText: { fontSize: 10, fontWeight: "800" }, nearbyRow: { borderTopWidth: 1, paddingTop: 11, flexDirection: "row-reverse", alignItems: "center", gap: 10 }, driverIcon: { fontSize: 25 }, driverName: { fontSize: 13, fontWeight: "800", textAlign: "right" }, driverMeta: { fontSize: 10, marginTop: 3, textAlign: "right" }, driverCopy: { flex: 1, alignItems: "flex-end" }, driverEta: { fontSize: 13, fontWeight: "800" },
   wave: { fontSize: 25 },
   actions: { gap: 10 },
   rideAction: { minHeight: 78, borderRadius: 20, borderWidth: 1, paddingHorizontal: 14, flexDirection: "row-reverse", alignItems: "center", gap: 12 },
@@ -294,5 +311,5 @@ const styles = StyleSheet.create({
   primaryButton: { minHeight: 55, borderRadius: 17, alignItems: "center", justifyContent: "center", marginTop: 20 }, primaryButtonText: { fontFamily: "Cairo_700Bold", color: "#FFFFFF", fontSize: 16, fontWeight: "800" }, cancelButton: { alignItems: "center", paddingVertical: 13 }, cancelText: { fontSize: 13, fontWeight: "700" }, pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   matchingCircle: { alignSelf: "center", width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center", marginTop: 5, marginBottom: 18 }, matchingEmoji: { fontSize: 42 }, centerText: { textAlign: "center" }, progressTrack: { height: 8, borderRadius: 8, overflow: "hidden", marginTop: 25 }, progressFill: { height: 8, width: "58%", borderRadius: 8 }, matchingHint: { fontSize: 12, textAlign: "center", marginTop: 12, fontWeight: "700" },
   activeHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, driverAvatar: { width: 58, height: 58, borderRadius: 20, alignItems: "center", justifyContent: "center" }, driverEmoji: { fontSize: 30 },   activeMap: { height: 165, borderRadius: 20, borderWidth: 1, marginTop: 18, position: "relative", overflow: "hidden" }, routeTrace: { position: "absolute", left: 16, top: 104, height: 5, borderRadius: 5, opacity: 0.82 }, livePin: { position: "absolute", top: 72, width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#FFFFFF" }, livePinText: { fontSize: 16 }, etaText: { position: "absolute", top: 12, right: 12, fontSize: 19, fontWeight: "800" }, etaLabel: { position: "absolute", top: 38, right: 12, fontSize: 10 }, tripInfoRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 18 }, infoLabel: { fontSize: 10, textAlign: "right" }, tripPin: { fontSize: 15, fontWeight: "800", marginTop: 4, textAlign: "right" }, safetyActions: { flexDirection: "row-reverse", gap: 8 }, safetyAction: { flex: 1, height: 62, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 4 }, safetyActionText: { fontSize: 11, fontWeight: "700" }, successCircle: { alignSelf: "center", width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center", marginTop: 8, marginBottom: 15 }, successEmoji: { color: "#137A5A", fontSize: 46, fontWeight: "800" }, ratingLabel: { textAlign: "center", marginTop: 26, fontSize: 14, fontWeight: "700" }, stars: { flexDirection: "row", justifyContent: "center", gap: 10, marginTop: 12 }, star: { color: "#F5A623", fontSize: 30 },
-  settingRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 17, borderBottomWidth: 1 }, themeSetting: { borderWidth: 1, borderRadius: 16, padding: 12, marginTop: 14, gap: 10 }, themeHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, themeStatus: { fontSize: 11, fontWeight: "700" }, themePreview: { borderWidth: 1, borderRadius: 12, padding: 12 }, themeChoices: { flexDirection: "row-reverse", gap: 8 }, themeChoice: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center" }, fontSetting: { borderWidth: 1, borderRadius: 16, padding: 12, marginTop: 14, gap: 10 }, fontChoices: { flexDirection: "row-reverse", gap: 8 }, fontChoice: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center" }, fontChoiceText: { fontSize: 11, fontWeight: "700" }, settingText: { fontSize: 15, fontWeight: "600" }, secondaryButton: { minHeight: 52, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 20 }, secondaryButtonText: { fontFamily: "Cairo_700Bold", fontSize: 15, fontWeight: "800" },
+  settingRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 17, borderBottomWidth: 1 }, themeSetting: { borderWidth: 1, borderRadius: 16, padding: 12, marginTop: 14, gap: 10 }, themeHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, themeStatus: { fontSize: 11, fontWeight: "700" }, themePreview: { borderWidth: 1, borderRadius: 12, padding: 12 }, themeChoices: { flexDirection: "row-reverse", gap: 8 }, themeChoice: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center" }, fontSetting: { borderWidth: 1, borderRadius: 16, padding: 12, marginTop: 14, gap: 10 }, fontChoices: { flexDirection: "row-reverse", gap: 8 }, fontChoice: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center" }, fontChoiceText: { fontSize: 11, fontWeight: "700" }, settingText: { fontSize: 15, fontWeight: "600" }, loginButton: { minHeight: 50, borderRadius: 16, alignItems: "center", justifyContent: "center", marginTop: 18 }, loginButtonText: { color: "#FFFFFF", fontFamily: "Cairo_700Bold", fontSize: 13, fontWeight: "800" }, secondaryButton: { minHeight: 52, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 20 }, secondaryButtonText: { fontFamily: "Cairo_700Bold", fontSize: 15, fontWeight: "800" },
 });

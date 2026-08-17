@@ -44,3 +44,10 @@
 - [x] Add driver management, verification review, and subscription receipt queue
 - [x] Add rides, users, payments, notifications, and settings sections
 - [x] Add dashboard search, filters, detail panels, and actionable admin states
+
+- [x] Add role-based login and entry flows for family, driver, and admin
+- [x] Add family profile, complaint submission, complaint tracking, and support area
+- [x] Add location permission, current-location detection, and pickup map state
+- [x] Add nearby-driver discovery with availability, distance, ETA, and vehicle filters
+- [x] Add booking lifecycle from driver selection to request, acceptance, active trip, and completion
+- [x] Add admin driver freeze, suspend, reactivate, and reason/audit controls

@@ -86,6 +86,7 @@ const config: ExpoConfig = {
   },
   plugins: [
     "expo-router",
+    ["expo-location", { locationWhenInUsePermission: "السماح لتطبيق وصلني بتحديد موقعك للعثور على أقرب سائق ومكان الركوب." }],
     [
       "expo-audio",
       {
