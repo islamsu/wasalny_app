@@ -35,3 +35,6 @@
 - [x] Persist selected font size locally across app restarts
 - [x] Apply selected font size to driver, history, and admin screens
 - [x] Add live light/dark mode preview and switching in settings
+
+- [x] Replace document checklist ticks with real in-app uploads during driver registration
+- [x] Add actual payment-receipt file upload state and validation
