@@ -19,7 +19,7 @@ export const appRouter = router({
     nearby: protectedProcedure.input(z.object({ lat: z.number(), lng: z.number() })).query(({ input }) => db.listNearbyDrivers(input.lat, input.lng)),
   }),
   complaints: router({
-    create: protectedProcedure.input(z.object({ category: z.string().min(1), description: z.string().trim().min(5), relatedRideId: z.number().int().positive().nullable().optional() })).mutation(({ ctx, input }) => db.createFamilyComplaint({ familyUserId: ctx.user.id, category: input.category, description: input.description, relatedRideId: input.relatedRideId ?? null })),
+    create: protectedProcedure.input(z.object({ category: z.string().min(1), title: z.string().trim().min(3).max(255), description: z.string().trim().min(5), relatedRideId: z.number().int().positive().nullable().optional() })).mutation(({ ctx, input }) => db.createFamilyComplaint({ familyUserId: ctx.user.id, category: input.category, title: input.title, description: input.description, relatedRideId: input.relatedRideId ?? null })),
   }),
   admin: router({
     settings: router({

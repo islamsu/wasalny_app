@@ -92,3 +92,8 @@
 - [x] Add ride-history selection to the family complaint form
 - [x] Persist the selected ride identifier with the complaint
 - [x] Test ride-linked complaint submission and admin history display
+
+- [x] Add date and status filters to ride selection in the complaint form
+- [x] Auto-generate complaint titles with the linked ride number
+- [x] Add an admin action to open linked ride details from complaint history
+- [x] Test complaint filtering, title generation, and linked ride navigation

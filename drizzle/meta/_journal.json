@@ -36,6 +36,13 @@
       "when": 1786978175018,
       "tag": "0004_tense_manta",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1786978957365,
+      "tag": "0005_greedy_hitman",
+      "breakpoints": true
     }
   ]
 }

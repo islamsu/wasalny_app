@@ -33,6 +33,7 @@ export const familyComplaints = mysqlTable("familyComplaints", {
   id: int("id").autoincrement().primaryKey(),
   familyUserId: int("familyUserId").notNull(),
   category: varchar("category", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
   description: text("description").notNull(),
   status: mysqlEnum("status", ["open", "in_review", "resolved", "closed"]).default("open").notNull(),
   relatedRideId: int("relatedRideId"),
