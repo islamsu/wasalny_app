@@ -43,6 +43,13 @@
       "when": 1786978957365,
       "tag": "0005_greedy_hitman",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1786979437364,
+      "tag": "0006_unusual_vance_astro",
+      "breakpoints": true
     }
   ]
 }

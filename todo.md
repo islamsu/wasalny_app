@@ -97,3 +97,8 @@
 - [x] Auto-generate complaint titles with the linked ride number
 - [x] Add an admin action to open linked ride details from complaint history
 - [x] Test complaint filtering, title generation, and linked ride navigation
+
+- [x] Add admin complaint search by title and linked ride number
+- [x] Add complaint status filter in the admin family detail screen
+- [x] Add complaint status and administrative notes update API with audit logging
+- [x] Add editable complaint detail modal and test complaint management flow

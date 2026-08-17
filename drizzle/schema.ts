@@ -35,6 +35,7 @@ export const familyComplaints = mysqlTable("familyComplaints", {
   category: varchar("category", { length: 64 }).notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   description: text("description").notNull(),
+  adminNotes: text("adminNotes"),
   status: mysqlEnum("status", ["open", "in_review", "resolved", "closed"]).default("open").notNull(),
   relatedRideId: int("relatedRideId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

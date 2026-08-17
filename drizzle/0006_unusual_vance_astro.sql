@@ -1,0 +1,1 @@
+ALTER TABLE `familyComplaints` ADD `adminNotes` text;
