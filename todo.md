@@ -16,3 +16,7 @@
 - [ ] Add backend-ready API boundaries without requiring live external credentials
 - [x] Add deterministic tests for core ride request and matching state transitions
 - [x] Verify TypeScript, lint, tests, and app preview
+
+- [x] Add driver onboarding and verification UI flows
+- [x] Add interactive simulated live GPS map for active rides
+- [x] Add ride history page with route details and receipt download
