@@ -47,6 +47,8 @@ export default function HomeScreen() {
   const removeFavoriteMutation = trpc.favorites.remove.useMutation({ onSuccess: () => favoritesQuery.refetch() });
   const offersQuery = trpc.rides.offers.list.useQuery({ rideId: createdRideId ?? 0 }, { enabled: Boolean(createdRideId), retry: false });
   const selectOfferMutation = trpc.rides.offers.select.useMutation({ onSuccess: () => { offersQuery.refetch(); setStage("active"); } });
+  const ratingMutation = trpc.ratings.create.useMutation();
+  const rideStatusMutation = trpc.rides.status.useMutation();
 
   const selectedVehicle = useMemo(
     () => vehicleOptions.find((item) => item.id === vehicle),
@@ -185,13 +187,13 @@ export default function HomeScreen() {
               <RideRequestSheet colors={colors} selectedVehicle={selectedVehicle} onBack={resetRide} onRequest={() => { createRideMutation.mutate({ vehicleType: selectedVehicle.id === "fast" ? "fast" : selectedVehicle.id, pickupLabel: locationLabel, destinationLabel: "اختار وجهتك من الخريطة", pickupLat: coordinates.latitude, pickupLng: coordinates.longitude, estimatedFare: selectedVehicle.id === "toktok" ? 35 : 55, etaMinutes: 8 }, { onSuccess: (ride) => { setCreatedRideId(ride?.id ?? null); setStage("matching"); } }); }} />
             ) : null}
             {stage === "matching" ? (
-              selectedVehicle?.id === "car" && (offersQuery.data ?? []).length > 0 ? <OffersSheet colors={colors} offers={offersQuery.data ?? []} onCancel={resetRide} onSelect={(offerId: number) => createdRideId && selectOfferMutation.mutate({ rideId: createdRideId, offerId })} /> : <MatchingSheet colors={colors} selectedVehicle={selectedVehicle} onCancel={resetRide} onMatched={() => setStage("active")} />
+              selectedVehicle?.id === "car" && (offersQuery.data ?? []).length > 0 ? <OffersSheet colors={colors} offers={offersQuery.data ?? []} onCancel={resetRide} onSelect={(offerId: number) => createdRideId && selectOfferMutation.mutate({ rideId: createdRideId, offerId })} /> : <MatchingSheet colors={colors} selectedVehicle={selectedVehicle} onCancel={resetRide} onMatched={() => { if (createdRideId) rideStatusMutation.mutate({ id: createdRideId, status: "accepted" }, { onSuccess: () => setStage("active") }); else setStage("active"); }} />
             ) : null}
             {stage === "active" ? (
-              <ActiveRideSheet colors={colors} onFinish={() => setStage("complete")} />
+              <ActiveRideSheet colors={colors} onFinish={() => { if (createdRideId) rideStatusMutation.mutate({ id: createdRideId, status: "active" }, { onSuccess: () => rideStatusMutation.mutate({ id: createdRideId, status: "completed" }, { onSuccess: () => setStage("complete") }) }); else setStage("complete"); }} />
             ) : null}
             {stage === "complete" ? (
-              <CompleteSheet colors={colors} onDone={resetRide} />
+              <CompleteSheet colors={colors} onDone={resetRide} onRate={(rating: number) => { if (createdRideId) ratingMutation.mutate({ rideId: createdRideId, rating }); }} />
             ) : null}
           </View>
         </View>
@@ -265,13 +267,13 @@ function ActiveRideSheet({ colors, onFinish }: any) {
   </>;
 }
 
-function CompleteSheet({ colors, onDone }: any) {
+function CompleteSheet({ colors, onDone, onRate }: any) {
   return <>
     <View style={[styles.successCircle, { backgroundColor: "#E8F5EE" }]}><Text style={styles.successEmoji}>✓</Text></View>
     <Text style={[styles.sheetTitle, styles.centerText, { color: colors.foreground }]}>وصلت بالسلامة</Text>
     <Text style={[styles.sheetSubtitle, styles.centerText, { color: colors.muted }]}>إجمالي المشوار ٤٥ جنيه · الدفع نقدي</Text>
     <Text style={[styles.ratingLabel, { color: colors.foreground }]}>قيّم تجربتك مع محمود</Text>
-    <View style={styles.stars}>{[1, 2, 3, 4, 5].map((item) => <Text key={item} style={styles.star}>★</Text>)}</View>
+    <View style={styles.stars}>{[1, 2, 3, 4, 5].map((item) => <Pressable key={item} onPress={() => onRate(item)}><Text style={styles.star}>★</Text></Pressable>)}</View>
     <Pressable onPress={onDone} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>تم</Text></Pressable>
   </>;
 }

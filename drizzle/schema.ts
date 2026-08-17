@@ -95,6 +95,42 @@ export const rideOffers = mysqlTable("rideOffers", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (table) => ({ rideDriverUnique: uniqueIndex("offer_ride_driver_unique").on(table.rideId, table.driverUserId) }));
 
+export const driverDocuments = mysqlTable("driverDocuments", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  documentType: varchar("documentType", { length: 64 }).notNull(),
+  fileName: varchar("fileName", { length: 255 }).notNull(),
+  mimeType: varchar("mimeType", { length: 128 }).notNull(),
+  storageKey: varchar("storageKey", { length: 512 }).notNull(),
+  storageUrl: varchar("storageUrl", { length: 1024 }).notNull(),
+  status: mysqlEnum("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
+  reviewReason: text("reviewReason"),
+  reviewedBy: int("reviewedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export const rideRatings = mysqlTable("rideRatings", {
+  id: int("id").autoincrement().primaryKey(),
+  rideId: int("rideId").notNull(),
+  familyUserId: int("familyUserId").notNull(),
+  driverUserId: int("driverUserId").notNull(),
+  rating: int("rating").notNull(),
+  comment: text("comment"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ rideFamilyUnique: uniqueIndex("rating_ride_family_unique").on(table.rideId, table.familyUserId) }));
+
+export const notificationEvents = mysqlTable("notificationEvents", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  eventKey: varchar("eventKey", { length: 160 }).notNull().unique(),
+  eventType: varchar("eventType", { length: 64 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  body: text("body").notNull(),
+  data: text("data"),
+  sentAt: timestamp("sentAt").defaultNow().notNull(),
+});
+
 export const pushTokens = mysqlTable("pushTokens", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -113,6 +149,9 @@ export type Ride = typeof rides.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
 export type FavoriteDriver = typeof favoriteDrivers.$inferSelect;
 export type RideOffer = typeof rideOffers.$inferSelect;
+export type DriverDocument = typeof driverDocuments.$inferSelect;
+export type RideRating = typeof rideRatings.$inferSelect;
+export type NotificationEvent = typeof notificationEvents.$inferSelect;
 
 export const adminSettings = mysqlTable("adminSettings", {
   id: int("id").autoincrement().primaryKey(),

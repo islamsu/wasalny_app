@@ -4,13 +4,21 @@ import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "../shared/const";
 import * as db from "./db";
-import { sendPushToUser } from "./push";
+import { sendPushToUser, sendPushToUserOnce } from "./push";
 
 export const appRouter = router({
   system: systemRouter,
   auth: router({
     me: publicProcedure.query((opts) => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => { const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }),
+  }),
+  driverDocuments: router({
+    listMine: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listDriverDocuments(ctx.user.id); }),
+    upload: protectedProcedure.input(z.object({ documentType: z.string().min(1).max(64), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(128), dataBase64: z.string().min(1) })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.createDriverDocument({ ...input, userId: ctx.user.id }); }),
+  }),
+  ratings: router({
+    create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), rating: z.number().int().min(1).max(5), comment: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const rating = await db.createRideRating({ ...input, familyUserId: ctx.user.id }); if (rating?.driverUserId) await sendPushToUserOnce(rating.driverUserId, `rating:${rating.rideId}:${rating.familyUserId}`, "rating_created", { title: "تقييم جديد", body: `حصلت على تقييم ${rating.rating} من 5 بعد الرحلة.`, data: { rideId: rating.rideId, rating: rating.rating } }); return rating; }),
+    mine: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listDriverRatings(ctx.user.id); }),
   }),
   profile: router({
     ensureDriver: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car"]).default("car") })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.ensureDriverProfile(ctx.user.id, input.vehicleType); }),
@@ -33,6 +41,10 @@ export const appRouter = router({
       update: protectedProcedure.input(z.object({ settingKey: z.string().min(1), settingValue: z.string().min(1), category: z.enum(["pricing", "permissions", "subscription", "notifications"]) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.updateAdminSetting({ ...input, updatedBy: ctx.user.id }); }),
     }),
     audit: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminAuditLogs(input.limit); }),
+    documents: router({
+      list: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listDriverDocuments(); }),
+      reviewDocument: protectedProcedure.input(z.object({ documentId: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewReason: z.string().trim().min(3) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.reviewDriverDocument({ ...input, reviewedBy: ctx.user.id }); }),
+    }),
     users: router({
       listFamilies: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listNonDriverUsers(); }),
       familyHistory: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.getFamilyGovernanceHistory(input.userId); }),
@@ -50,21 +62,23 @@ export const appRouter = router({
       const bookingCode = `WS-${Date.now().toString().slice(-7)}`;
       const ride = await db.createRide({ ...input, bookingCode, familyUserId: ctx.user.id });
       const nearbyDrivers = await db.listNearbyDrivers(input.pickupLat, input.pickupLng);
-      await Promise.allSettled(nearbyDrivers.map((driver) => sendPushToUser(driver.userId, { title: "طلب رحلة قريب منك", body: `يوجد طلب ${input.vehicleType === "toktok" ? "توك توك" : "سيارة"} جديد بالقرب من ${input.pickupLabel}.`, data: { url: "/driver", rideId: ride?.id ?? null } })));
+      await Promise.allSettled(nearbyDrivers.map((driver) => sendPushToUserOnce(driver.userId, `ride:${ride?.id}:request:${driver.userId}`, "ride_requested", { title: "طلب رحلة قريب منك", body: `يوجد طلب ${input.vehicleType === "toktok" ? "توك توك" : "سيارة"} جديد بالقرب من ${input.pickupLabel}.`, data: { url: "/driver", rideId: ride?.id ?? null } })));
       return ride;
     }),
     mine: protectedProcedure.query(({ ctx }) => db.listFamilyRides(ctx.user.id)),
     driverRequests: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listOpenCarRequests(); }),
     offers: router({
       list: protectedProcedure.input(z.object({ rideId: z.number().int().positive() })).query(({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); return db.listRideOffers(input.rideId, ctx.user.id); }),
-      create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offeredPrice: z.number().int().positive(), etaMinutes: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); const offer = await db.createCarOffer({ ...input, driverUserId: ctx.user.id }); const ride = await db.getRideById(input.rideId); if (ride?.familyUserId) await sendPushToUser(ride.familyUserId, { title: "عرض سعر جديد", body: `أرسل سائق عرضاً بقيمة ${input.offeredPrice} ج.م للوصول خلال ${input.etaMinutes} دقيقة.`, data: { type: "ride_offer", rideId: input.rideId, offerId: offer?.id ?? null } }); return offer; }),
-      select: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offerId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const offer = await db.selectCarOffer({ ...input, familyUserId: ctx.user.id }); if (offer?.driverUserId) await sendPushToUser(offer.driverUserId, { title: "تم اختيار عرضك", body: "اختارت العائلة عرضك ويمكنك متابعة الرحلة.", data: { type: "ride_offer_selected", rideId: input.rideId, offerId: input.offerId } }); return offer; }),
+      create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offeredPrice: z.number().int().positive(), etaMinutes: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); const offer = await db.createCarOffer({ ...input, driverUserId: ctx.user.id }); const ride = await db.getRideById(input.rideId); if (ride?.familyUserId) await sendPushToUserOnce(ride.familyUserId, `ride:${input.rideId}:offer:${offer?.id}`, "ride_offer", { title: "عرض سعر جديد", body: `أرسل سائق عرضاً بقيمة ${input.offeredPrice} ج.م للوصول خلال ${input.etaMinutes} دقيقة.`, data: { type: "ride_offer", rideId: input.rideId, offerId: offer?.id ?? null } }); return offer; }),
+      select: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offerId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const offer = await db.selectCarOffer({ ...input, familyUserId: ctx.user.id }); if (offer?.driverUserId) await sendPushToUserOnce(offer.driverUserId, `ride:${input.rideId}:offer-selected:${input.offerId}`, "ride_offer_selected", { title: "تم اختيار عرضك", body: "اختارت العائلة عرضك ويمكنك متابعة الرحلة.", data: { type: "ride_offer_selected", rideId: input.rideId, offerId: input.offerId } }); return offer; }),
     }),
     status: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["accepted", "arriving", "active", "completed", "cancelled"]) })).mutation(async ({ ctx, input }) => {
       const actorRole = ((ctx.user as any).appRole ?? (ctx.user.role === "admin" ? "admin" : "family")) as "family" | "driver" | "admin";
       const updatedRide = await db.updateRideStatus({ id: input.id, status: input.status, actorUserId: ctx.user.id, actorRole });
-      if (updatedRide?.familyUserId && updatedRide.familyUserId !== ctx.user.id) {
-        await sendPushToUser(updatedRide.familyUserId, { title: "تحديث الرحلة", body: input.status === "accepted" ? "تم قبول طلبك وسيصل السائق قريباً." : input.status === "arriving" ? "السائق في الطريق إليك." : input.status === "active" ? "بدأت الرحلة." : input.status === "completed" ? "اكتملت رحلتك." : "تم تحديث حالة رحلتك.", data: { rideId: input.id, status: input.status } });
+      const recipientId = actorRole === "driver" ? updatedRide?.familyUserId : updatedRide?.driverUserId;
+      if (recipientId && recipientId !== ctx.user.id) {
+        const body = input.status === "accepted" ? "تم قبول طلبك وسيصل السائق قريباً." : input.status === "arriving" ? "السائق في الطريق إليك." : input.status === "active" ? "بدأت الرحلة." : input.status === "completed" ? "اكتملت رحلتك." : "تم تحديث حالة رحلتك.";
+        await sendPushToUserOnce(recipientId, `ride:${input.id}:status:${input.status}`, "ride_status", { title: "تحديث الرحلة", body, data: { rideId: input.id, status: input.status } });
       }
       return { success: true, ride: updatedRide };
     }),

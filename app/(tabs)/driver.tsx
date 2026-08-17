@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { trpc } from "@/lib/trpc";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -28,6 +29,7 @@ export default function DriverScreen() {
   const driverRequestsQuery = trpc.rides.driverRequests.useQuery(undefined, { retry: false });
   const offerMutation = trpc.rides.offers.create.useMutation({ onSuccess: () => driverRequestsQuery.refetch() });
   const availabilityMutation = trpc.profile.availability.useMutation();
+  const documentUploadMutation = trpc.driverDocuments.upload.useMutation();
   const uploadedCount = Object.keys(uploadedFiles).length;
   const complete = uploadedCount === documents.length;
   const statusLabel = useMemo(() => submitted ? "قيد مراجعة الإدارة" : complete ? "جاهز للإرسال" : "ارفع كل المستندات المطلوبة", [submitted, complete]);
@@ -37,6 +39,10 @@ export default function DriverScreen() {
     if (result.canceled) return;
     const asset = result.assets[0];
     setUploadedFiles((current) => ({ ...current, [id]: { name: asset.name, uri: asset.uri, mimeType: asset.mimeType } }));
+    if (Platform.OS !== "web") {
+      const dataBase64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
+      documentUploadMutation.mutate({ documentType: id, fileName: asset.name, mimeType: asset.mimeType ?? "application/octet-stream", dataBase64 });
+    }
   };
 
   return (

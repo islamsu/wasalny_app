@@ -117,4 +117,14 @@
 - [x] Implement persistent favorite drivers with add, remove, list, and trip-request flows
 - [x] Implement validated car bidding with offers, comparison, selection, and trip lifecycle integration
 - [ ] Run full Android-first RTL regression and end-to-end verification
-- [ ] Produce final audit report with remaining risks and confirmed functionality
+- [x] Produce final audit report with remaining risks and confirmed functionality
+
+# Production Readiness Workstreams
+
+- [x] Persist driver document uploads with storage metadata and admin review state
+- [x] Add real driver document review actions and audit history in admin
+- [x] Add persistent driver ratings and family rating flow after completed rides
+- [x] Complete lifecycle push notifications with event deduplication
+- [ ] Configure and validate real map tiles/geocoding provider credentials
+- [ ] Validate Android GPS, notifications, background/foreground, and RTL behavior
+- [x] Run regression tests and document remaining provider/device limitations
