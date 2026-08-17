@@ -5,7 +5,9 @@ type SubscriptionStatus = "unpaid" | "pending" | "approved" | "rejected";
 type WasalnyState = {
   subscriptionStatus: SubscriptionStatus;
   driverOnline: boolean;
+  fontScale: number;
   setSubscriptionStatus: (status: SubscriptionStatus) => void;
+  setFontScale: (scale: number) => void;
   toggleDriverOnline: () => void;
 };
 
@@ -14,9 +16,10 @@ const WasalnyContext = createContext<WasalnyState | null>(null);
 export function WasalnyStateProvider({ children }: { children: ReactNode }) {
   const [subscriptionStatus, setSubscriptionStatus] = useState<SubscriptionStatus>("pending");
   const [driverOnline, setDriverOnline] = useState(false);
-  const value = useMemo(() => ({ subscriptionStatus, driverOnline, setSubscriptionStatus, toggleDriverOnline: () => {
+  const [fontScale, setFontScale] = useState(1);
+  const value = useMemo(() => ({ subscriptionStatus, driverOnline, fontScale, setSubscriptionStatus, setFontScale, toggleDriverOnline: () => {
     if (subscriptionStatus === "approved") setDriverOnline((current) => !current);
-  }}), [subscriptionStatus, driverOnline]);
+  }}), [subscriptionStatus, driverOnline, fontScale]);
   return <WasalnyContext.Provider value={value}>{children}</WasalnyContext.Provider>;
 }
 

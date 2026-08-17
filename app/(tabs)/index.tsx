@@ -10,6 +10,7 @@ import {
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useWasalnyState } from "@/lib/wasalny-state";
 
 const vehicleOptions = [
   { id: "toktok", icon: "🛺", title: "اطلب توك توك", subtitle: "للمشاوير القريبة" },
@@ -23,6 +24,7 @@ type RideStage = "idle" | "request" | "matching" | "active" | "complete";
 
 export default function HomeScreen() {
   const colors = useColors();
+  const { fontScale, setFontScale } = useWasalnyState();
   const [vehicle, setVehicle] = useState<VehicleId | null>(null);
   const [stage, setStage] = useState<RideStage>("idle");
   const [showProfile, setShowProfile] = useState(false);
@@ -47,7 +49,7 @@ export default function HomeScreen() {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
-        style={{ backgroundColor: colors.background }}
+        style={{ backgroundColor: colors.background, transform: [{ scale: fontScale }] }}
       >
         <View style={styles.header}>
           <View style={styles.brandBlock}>
@@ -176,6 +178,7 @@ export default function HomeScreen() {
                 <Text style={{ color: colors.muted }}>‹</Text>
               </View>
             ))}
+            <View style={[styles.fontSetting, { borderColor: colors.border, backgroundColor: colors.surface }]}><Text style={[styles.settingText, { color: colors.foreground }]}>حجم الخط</Text><View style={styles.fontChoices}>{[[1, "عادي"], [1.12, "كبير"], [1.25, "كبير جداً"]].map(([scale, label]) => <Pressable key={String(scale)} onPress={() => setFontScale(Number(scale))} style={[styles.fontChoice, { borderColor: fontScale === scale ? colors.primary : colors.border, backgroundColor: fontScale === scale ? "#E8F5EE" : colors.background }]}><Text style={[styles.fontChoiceText, { color: fontScale === scale ? colors.primary : colors.muted }]}>{label}</Text></Pressable>)}</View></View>
             <Pressable onPress={() => setShowProfile(false)} style={[styles.secondaryButton, { borderColor: colors.border }]}><Text style={[styles.secondaryButtonText, { color: colors.foreground }]}>إغلاق</Text></Pressable>
           </View>
         </View>
@@ -243,7 +246,7 @@ const styles = StyleSheet.create({
   brandBlock: { flexDirection: "row-reverse", alignItems: "center", gap: 10 },
   logoMark: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   logoGlyph: { color: "#FFFFFF", fontSize: 28, fontWeight: "800" },
-  brandName: { fontSize: 25, fontWeight: "800", textAlign: "right" },
+  brandName: { fontFamily: "Cairo_800ExtraBold", fontSize: 25, fontWeight: "800", textAlign: "right" },
   tagline: { fontSize: 11, marginTop: 2, textAlign: "right" },
   profileButton: { width: 44, height: 44, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   profileEmoji: { fontSize: 20 },
@@ -261,7 +264,7 @@ const styles = StyleSheet.create({
   mapPinInner: { width: 7, height: 7, backgroundColor: "#FFFFFF", borderRadius: 4 },
   mapLabel: { position: "absolute", bottom: 10, right: 12, fontSize: 10 },
   sectionHeading: { flexDirection: "row-reverse", alignItems: "center", justifyContent: "space-between", marginTop: 2 },
-  sectionTitle: { fontSize: 18, fontWeight: "800", textAlign: "right" },
+  sectionTitle: { fontFamily: "Cairo_800ExtraBold", fontSize: 18, fontWeight: "800", textAlign: "right" },
   sectionSubtitle: { fontSize: 12, marginTop: 4, textAlign: "right" },
   wave: { fontSize: 25 },
   actions: { gap: 10 },
@@ -269,7 +272,7 @@ const styles = StyleSheet.create({
   actionIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   actionEmoji: { fontSize: 26 },
   actionCopy: { flex: 1, alignItems: "flex-end" },
-  actionTitle: { fontSize: 16, fontWeight: "800", textAlign: "right" },
+  actionTitle: { fontFamily: "Cairo_700Bold", fontSize: 16, fontWeight: "800", textAlign: "right" },
   actionSubtitle: { fontSize: 11, marginTop: 3, textAlign: "right" },
   actionArrow: { fontSize: 30, transform: [{ rotate: "180deg" }] },
   safetyCard: { borderRadius: 20, padding: 15, flexDirection: "row-reverse", alignItems: "center", gap: 10 },
@@ -282,11 +285,11 @@ const styles = StyleSheet.create({
   sheet: { borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingHorizontal: 22, paddingBottom: 28, paddingTop: 10, minHeight: 430 },
   sheetHandle: { alignSelf: "center", width: 42, height: 5, borderRadius: 4, backgroundColor: "#B7C7BE", marginBottom: 22 },
   sheetEyebrow: { fontSize: 12, fontWeight: "800", textAlign: "right", marginBottom: 5 },
-  sheetTitle: { fontSize: 23, fontWeight: "800", textAlign: "right" }, sheetSubtitle: { fontSize: 13, textAlign: "right", marginTop: 5, lineHeight: 20 },
+  sheetTitle: { fontFamily: "Cairo_800ExtraBold", fontSize: 23, fontWeight: "800", textAlign: "right" }, sheetSubtitle: { fontSize: 13, textAlign: "right", marginTop: 5, lineHeight: 20 },
   summaryCard: { flexDirection: "row-reverse", alignItems: "center", borderWidth: 1, borderRadius: 18, padding: 13, marginTop: 20, gap: 11 }, summaryIcon: { fontSize: 27 }, summaryCopy: { flex: 1, alignItems: "flex-end" }, summaryTitle: { fontSize: 15, fontWeight: "800" }, summaryMeta: { fontSize: 11, marginTop: 3 }, summaryCheck: { fontSize: 22, fontWeight: "800" },
   routeRow: { flexDirection: "row-reverse", alignItems: "center", gap: 12, paddingVertical: 13, borderBottomWidth: 1 }, routeDot: { width: 11, height: 11, borderRadius: 6 }, routeLabel: { fontSize: 11, textAlign: "right" }, routeValue: { fontSize: 14, fontWeight: "700", marginTop: 2, textAlign: "right" },
-  primaryButton: { minHeight: 55, borderRadius: 17, alignItems: "center", justifyContent: "center", marginTop: 20 }, primaryButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "800" }, cancelButton: { alignItems: "center", paddingVertical: 13 }, cancelText: { fontSize: 13, fontWeight: "700" }, pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
+  primaryButton: { minHeight: 55, borderRadius: 17, alignItems: "center", justifyContent: "center", marginTop: 20 }, primaryButtonText: { fontFamily: "Cairo_700Bold", color: "#FFFFFF", fontSize: 16, fontWeight: "800" }, cancelButton: { alignItems: "center", paddingVertical: 13 }, cancelText: { fontSize: 13, fontWeight: "700" }, pressed: { opacity: 0.78, transform: [{ scale: 0.98 }] },
   matchingCircle: { alignSelf: "center", width: 92, height: 92, borderRadius: 46, alignItems: "center", justifyContent: "center", marginTop: 5, marginBottom: 18 }, matchingEmoji: { fontSize: 42 }, centerText: { textAlign: "center" }, progressTrack: { height: 8, borderRadius: 8, overflow: "hidden", marginTop: 25 }, progressFill: { height: 8, width: "58%", borderRadius: 8 }, matchingHint: { fontSize: 12, textAlign: "center", marginTop: 12, fontWeight: "700" },
   activeHeader: { flexDirection: "row-reverse", justifyContent: "space-between", alignItems: "center" }, driverAvatar: { width: 58, height: 58, borderRadius: 20, alignItems: "center", justifyContent: "center" }, driverEmoji: { fontSize: 30 },   activeMap: { height: 165, borderRadius: 20, borderWidth: 1, marginTop: 18, position: "relative", overflow: "hidden" }, routeTrace: { position: "absolute", left: 16, top: 104, height: 5, borderRadius: 5, opacity: 0.82 }, livePin: { position: "absolute", top: 72, width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", borderWidth: 3, borderColor: "#FFFFFF" }, livePinText: { fontSize: 16 }, etaText: { position: "absolute", top: 12, right: 12, fontSize: 19, fontWeight: "800" }, etaLabel: { position: "absolute", top: 38, right: 12, fontSize: 10 }, tripInfoRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 18 }, infoLabel: { fontSize: 10, textAlign: "right" }, tripPin: { fontSize: 15, fontWeight: "800", marginTop: 4, textAlign: "right" }, safetyActions: { flexDirection: "row-reverse", gap: 8 }, safetyAction: { flex: 1, height: 62, borderRadius: 15, borderWidth: 1, alignItems: "center", justifyContent: "center", gap: 4 }, safetyActionText: { fontSize: 11, fontWeight: "700" }, successCircle: { alignSelf: "center", width: 82, height: 82, borderRadius: 41, alignItems: "center", justifyContent: "center", marginTop: 8, marginBottom: 15 }, successEmoji: { color: "#137A5A", fontSize: 46, fontWeight: "800" }, ratingLabel: { textAlign: "center", marginTop: 26, fontSize: 14, fontWeight: "700" }, stars: { flexDirection: "row", justifyContent: "center", gap: 10, marginTop: 12 }, star: { color: "#F5A623", fontSize: 30 },
-  settingRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 17, borderBottomWidth: 1 }, settingText: { fontSize: 15, fontWeight: "600" }, secondaryButton: { minHeight: 52, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 20 }, secondaryButtonText: { fontSize: 15, fontWeight: "800" },
+  settingRow: { flexDirection: "row-reverse", justifyContent: "space-between", paddingVertical: 17, borderBottomWidth: 1 }, fontSetting: { borderWidth: 1, borderRadius: 16, padding: 12, marginTop: 14, gap: 10 }, fontChoices: { flexDirection: "row-reverse", gap: 8 }, fontChoice: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 9, alignItems: "center" }, fontChoiceText: { fontSize: 11, fontWeight: "700" }, settingText: { fontSize: 15, fontWeight: "600" }, secondaryButton: { minHeight: 52, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", marginTop: 20 }, secondaryButtonText: { fontFamily: "Cairo_700Bold", fontSize: 15, fontWeight: "800" },
 });

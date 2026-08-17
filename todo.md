@@ -27,3 +27,7 @@
 - [x] Add admin section to review, approve, and reject monthly payment receipts
 
 - [x] Replace the default typography with a professional, clear Arabic app font
+
+- [x] Apply Cairo font weights to headings, labels, and buttons
+- [x] Add an adjustable font-size setting for easier reading
+- [x] Improve dark-mode text contrast for the new typography
