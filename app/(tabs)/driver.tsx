@@ -18,7 +18,7 @@ const documents = [
 
 export default function DriverScreen() {
   const colors = useColors();
-  const { subscriptionStatus, driverOnline, toggleDriverOnline } = useWasalnyState();
+  const { subscriptionStatus, driverOnline, fontScale, toggleDriverOnline } = useWasalnyState();
   const [vehicle, setVehicle] = useState<VehicleChoice | null>(null);
   const [uploaded, setUploaded] = useState<string[]>([]);
   const [submitted, setSubmitted] = useState(false);
@@ -31,7 +31,7 @@ export default function DriverScreen() {
 
   return (
     <ScreenContainer className="p-5" safeAreaClassName="bg-background">
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} style={{ transform: [{ scale: fontScale }] }}>
         <Text style={[styles.eyebrow, { color: colors.primary }]}>مساحة السائق</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>خليك سائق في وصلني</Text>
         <Text style={[styles.subtitle, { color: colors.muted }]}>سجّل بياناتك مرة واحدة، وبعد موافقة الإدارة ابدأ تستقبل مشاوير بدون عمولة.</Text>

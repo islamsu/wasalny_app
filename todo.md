@@ -31,3 +31,7 @@
 - [x] Apply Cairo font weights to headings, labels, and buttons
 - [x] Add an adjustable font-size setting for easier reading
 - [x] Improve dark-mode text contrast for the new typography
+
+- [x] Persist selected font size locally across app restarts
+- [x] Apply selected font size to driver, history, and admin screens
+- [x] Add live light/dark mode preview and switching in settings

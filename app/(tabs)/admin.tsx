@@ -7,10 +7,10 @@ import { useWasalnyState } from "@/lib/wasalny-state";
 
 export default function AdminScreen() {
   const colors = useColors();
-  const { subscriptionStatus, setSubscriptionStatus } = useWasalnyState();
+  const { subscriptionStatus, fontScale, setSubscriptionStatus } = useWasalnyState();
   const [decision, setDecision] = useState<"approved" | "rejected" | null>(null);
   const status = decision ?? subscriptionStatus;
-  return <ScreenContainer className="p-5" safeAreaClassName="bg-background"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+  return <ScreenContainer className="p-5" safeAreaClassName="bg-background"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} style={{ transform: [{ scale: fontScale }] }}>
     <Text style={[styles.eyebrow, { color: colors.primary }]}>لوحة الإدارة</Text>
     <Text style={[styles.title, { color: colors.foreground }]}>مراجعة الاشتراكات</Text>
     <Text style={[styles.subtitle, { color: colors.muted }]}>راجع إيصالات الدفع قبل تفعيل استقبال المشاوير للسائق.</Text>

@@ -3,6 +3,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useWasalnyState } from "@/lib/wasalny-state";
 
 const rides = [
   { id: "1", date: "الأحد، ١١ أغسطس", route: "مدينة نصر ← عباس العقاد", vehicle: "سيارة", fare: "٤٥ ج.م", status: "مكتمل", time: "١١:٣٠ ص" },
@@ -12,10 +13,11 @@ const rides = [
 
 export default function HistoryScreen() {
   const colors = useColors();
+  const { fontScale } = useWasalnyState();
   const [selected, setSelected] = useState<(typeof rides)[number] | null>(null);
   const [downloaded, setDownloaded] = useState(false);
 
-  return <ScreenContainer className="p-5" safeAreaClassName="bg-background"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
+  return <ScreenContainer className="p-5" safeAreaClassName="bg-background"><ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} style={{ transform: [{ scale: fontScale }] }}>
     <Text style={[styles.eyebrow, { color: colors.primary }]}>رحلاتك</Text>
     <Text style={[styles.title, { color: colors.foreground }]}>سجل المشاوير</Text>
     <Text style={[styles.subtitle, { color: colors.muted }]}>كل مشاويرك وتفاصيلها في مكان واحد</Text>
