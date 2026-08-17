@@ -1,5 +1,5 @@
 export type VehicleType = "toktok" | "car";
-export type RideStatus = "draft" | "requested" | "matching" | "accepted" | "active" | "completed" | "cancelled";
+export type RideStatus = "draft" | "requested" | "matching" | "accepted" | "arriving" | "active" | "completed" | "cancelled";
 
 export interface RideRequest {
   id: string;
@@ -39,4 +39,14 @@ export function nextRideStatus(status: RideStatus, event: "submit" | "driverAcce
   if (status === "accepted" && event === "start") return "active";
   if (status === "active" && event === "finish") return "completed";
   return status;
+}
+
+export function canDriverReceiveRequests(input: { subscriptionStatus: "pending" | "approved" | "rejected" | "expired"; accountStatus: "active" | "frozen" | "suspended"; online: boolean }) {
+  return input.online && input.subscriptionStatus === "approved" && input.accountStatus === "active";
+}
+
+export function transitionRide(status: Extract<RideStatus, "requested" | "accepted" | "matching" | "arriving" | "active" | "completed">, next: "accepted" | "arriving" | "active" | "completed" | "cancelled") {
+  const allowed: Record<string, string[]> = { requested: ["accepted", "cancelled"], accepted: ["arriving", "cancelled"], arriving: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [] };
+  if (!allowed[status]?.includes(next)) throw new Error(`Invalid ride transition: ${status} -> ${next}`);
+  return next;
 }

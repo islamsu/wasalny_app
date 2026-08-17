@@ -10,6 +10,7 @@ import {
   Platform,
 } from "react-native";
 import NativeMap from "@/components/native-map";
+import { getMockDrivers } from "@/shared/mock-map";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -111,7 +112,7 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        <View style={[styles.nearbyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sectionHeading}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>سائقين قريبين منك</Text><Text style={[styles.linkText, { color: colors.primary }]}>١٢ متاح الآن</Text></View>{[{ id: "ahmed", name: "أحمد حسن", vehicle: "سيارة", distance: "٠.٨ كم", eta: "٤ د", icon: "🚗" }, { id: "khaled", name: "خالد علي", vehicle: "توك توك", distance: "١.٢ كم", eta: "٦ د", icon: "🛺" }].map((driver) => <Pressable key={driver.id} onPress={() => { setSelectedNearbyDriver(driver.id); setVehicle(driver.vehicle === "سيارة" ? "car" : "toktok"); setStage("request"); }} style={[styles.nearbyRow, { borderTopColor: colors.border, backgroundColor: selectedNearbyDriver === driver.id ? "#E8F5EE" : colors.surface }]}><Text style={[styles.driverEta, { color: colors.primary }]}>{driver.eta}</Text><View style={styles.driverCopy}><Text style={[styles.driverName, { color: colors.foreground }]}>{driver.name}</Text><Text style={[styles.driverMeta, { color: colors.muted }]}>{driver.vehicle} · {driver.distance}</Text></View><Text style={styles.driverIcon}>{driver.icon}</Text></Pressable>)}</View>
+        <View style={[styles.nearbyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.sectionHeading}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>سائقين قريبين منك</Text><Text style={[styles.linkText, { color: colors.primary }]}>١٢ متاح الآن</Text></View>{getMockDrivers().filter((driver) => driver.available).map((driver) => <Pressable key={driver.id} onPress={() => { setSelectedNearbyDriver(driver.id); setVehicle(driver.vehicle === "car" ? "car" : "toktok"); setStage("request"); }} style={[styles.nearbyRow, { borderTopColor: colors.border, backgroundColor: selectedNearbyDriver === driver.id ? "#E8F5EE" : colors.surface }]}><Text style={[styles.driverEta, { color: colors.primary }]}>{driver.etaMinutes} د</Text><View style={styles.driverCopy}><Text style={[styles.driverName, { color: colors.foreground }]}>{driver.name}</Text><Text style={[styles.driverMeta, { color: colors.muted }]}>{driver.vehicle === "car" ? "سيارة" : "توك توك"} · {driver.distanceKm.toFixed(1)} كم</Text></View><Text style={styles.driverIcon}>{driver.vehicle === "car" ? "🚗" : "🛺"}</Text></Pressable>)}</View>
 
         <View style={styles.sectionHeading}>
           <View>

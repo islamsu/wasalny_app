@@ -59,3 +59,9 @@
 - [x] Register device push tokens and notify drivers of new requests
 - [x] Notify families when drivers accept, approach, and arrive
 - [ ] Add integration tests for auth, booking, map location, and notification event flows
+
+- [x] Define documented E2E scenarios for family, driver, and admin flows
+- [x] Harden keyless mock maps with deterministic coordinates, routes, driver movement, and reset controls
+- [x] Verify family/user and driver document upload validation, replacement, and submission states
+- [x] Add deterministic E2E-style tests for driver governance, admin receipt review, mock maps, and uploads
+- [x] Save a verification report with pass/fail results and known limitations
