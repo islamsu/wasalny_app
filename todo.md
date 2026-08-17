@@ -25,3 +25,5 @@
 
 - [x] Link approved and active subscription status to driver ride-request eligibility
 - [x] Add admin section to review, approve, and reject monthly payment receipts
+
+- [x] Replace the default typography with a professional, clear Arabic app font
