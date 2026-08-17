@@ -38,3 +38,9 @@
 
 - [x] Replace document checklist ticks with real in-app uploads during driver registration
 - [x] Add actual payment-receipt file upload state and validation
+
+- [x] Build comprehensive admin dashboard shell with responsive RTL navigation
+- [x] Add operations overview with KPIs, live ride activity, alerts, and trends
+- [x] Add driver management, verification review, and subscription receipt queue
+- [x] Add rides, users, payments, notifications, and settings sections
+- [x] Add dashboard search, filters, detail panels, and actionable admin states
