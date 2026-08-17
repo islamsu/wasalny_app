@@ -1,4 +1,4 @@
-import { boolean, double, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { boolean, double, int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -77,6 +77,24 @@ export const rides = mysqlTable("rides", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
+export const favoriteDrivers = mysqlTable("favoriteDrivers", {
+  id: int("id").autoincrement().primaryKey(),
+  familyUserId: int("familyUserId").notNull(),
+  driverUserId: int("driverUserId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ familyDriverUnique: uniqueIndex("favorite_family_driver_unique").on(table.familyUserId, table.driverUserId) }));
+
+export const rideOffers = mysqlTable("rideOffers", {
+  id: int("id").autoincrement().primaryKey(),
+  rideId: int("rideId").notNull(),
+  driverUserId: int("driverUserId").notNull(),
+  offeredPrice: int("offeredPrice").notNull(),
+  etaMinutes: int("etaMinutes").notNull(),
+  status: mysqlEnum("status", ["pending", "selected", "rejected", "withdrawn"]).default("pending").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (table) => ({ rideDriverUnique: uniqueIndex("offer_ride_driver_unique").on(table.rideId, table.driverUserId) }));
+
 export const pushTokens = mysqlTable("pushTokens", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -93,6 +111,8 @@ export type FamilyViolation = typeof familyViolations.$inferSelect;
 export type FamilyComplaint = typeof familyComplaints.$inferSelect;
 export type Ride = typeof rides.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
+export type FavoriteDriver = typeof favoriteDrivers.$inferSelect;
+export type RideOffer = typeof rideOffers.$inferSelect;
 
 export const adminSettings = mysqlTable("adminSettings", {
   id: int("id").autoincrement().primaryKey(),
