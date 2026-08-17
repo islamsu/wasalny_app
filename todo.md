@@ -22,3 +22,6 @@
 - [x] Add ride history page with route details and receipt download
 
 - [x] Add monthly subscription payment-proof upload item to driver verification
+
+- [x] Link approved and active subscription status to driver ride-request eligibility
+- [x] Add admin section to review, approve, and reject monthly payment receipts

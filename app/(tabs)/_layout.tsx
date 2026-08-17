@@ -16,5 +16,6 @@ export default function TabLayout() {
     <Tabs.Screen name="index" options={{ title: "الرئيسية", tabBarIcon: ({ color }) => <IconSymbol size={23} name="house.fill" color={color} /> }} />
     <Tabs.Screen name="history" options={{ title: "المشاوير", tabBarIcon: ({ color }) => <IconSymbol size={23} name="clock.fill" color={color} /> }} />
     <Tabs.Screen name="driver" options={{ title: "للسائقين", tabBarIcon: ({ color }) => <IconSymbol size={23} name="person.fill" color={color} /> }} />
+    <Tabs.Screen name="admin" options={{ title: "الإدارة", tabBarIcon: ({ color }) => <IconSymbol size={23} name="person.fill" color={color} /> }} />
   </Tabs>;
 }
