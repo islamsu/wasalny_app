@@ -82,3 +82,9 @@
 - [x] Add admin user directory with searchable user data and detail view
 - [x] Add block, temporary suspension, permanent suspension, and reactivate actions
 - [x] Add audit history for every non-driver moderation decision
+
+- [x] Send Arabic push notifications for family suspension, blocking, and reactivation decisions
+- [x] Support custom suspension duration with persisted expiry and validation
+- [x] Add family violations, complaint history, and ride history aggregation API
+- [x] Add detailed family governance screen linking violations, complaints, and rides
+- [x] Add deterministic tests for notification payloads, duration handling, and family history

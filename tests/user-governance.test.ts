@@ -36,4 +36,9 @@ describe("admin family governance", () => {
     const caller = appRouter.createCaller(adminContext());
     await expect(caller.admin.users.moderateFamily({ userId: 12, status: "blocked", reason: "" })).rejects.toThrow();
   });
+
+  it("rejects an expired custom temporary suspension date", async () => {
+    const caller = appRouter.createCaller(adminContext());
+    await expect(caller.admin.users.moderateFamily({ userId: 12, status: "suspended_temp", reason: "مخالفة موثقة", suspendedUntil: new Date(Date.now() - 86400000).toISOString() })).rejects.toThrow("تاريخ مستقبلي");
+  });
 });

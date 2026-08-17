@@ -18,6 +18,27 @@ export const users = mysqlTable("users", {
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
+export const familyViolations = mysqlTable("familyViolations", {
+  id: int("id").autoincrement().primaryKey(),
+  familyUserId: int("familyUserId").notNull(),
+  category: varchar("category", { length: 64 }).notNull(),
+  reason: text("reason").notNull(),
+  source: varchar("source", { length: 64 }).notNull(),
+  relatedRideId: int("relatedRideId"),
+  createdBy: int("createdBy").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export const familyComplaints = mysqlTable("familyComplaints", {
+  id: int("id").autoincrement().primaryKey(),
+  familyUserId: int("familyUserId").notNull(),
+  category: varchar("category", { length: 64 }).notNull(),
+  description: text("description").notNull(),
+  status: mysqlEnum("status", ["open", "in_review", "resolved", "closed"]).default("open").notNull(),
+  relatedRideId: int("relatedRideId"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export const driverProfiles = mysqlTable("driverProfiles", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
@@ -66,6 +87,8 @@ export const pushTokens = mysqlTable("pushTokens", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type DriverProfile = typeof driverProfiles.$inferSelect;
+export type FamilyViolation = typeof familyViolations.$inferSelect;
+export type FamilyComplaint = typeof familyComplaints.$inferSelect;
 export type Ride = typeof rides.$inferSelect;
 export type PushToken = typeof pushTokens.$inferSelect;
 
