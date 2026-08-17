@@ -51,3 +51,11 @@
 - [x] Add nearby-driver discovery with availability, distance, ETA, and vehicle filters
 - [x] Add booking lifecycle from driver selection to request, acceptance, active trip, and completion
 - [x] Add admin driver freeze, suspend, reactivate, and reason/audit controls
+
+- [x] Add persistent role-aware users, driver profiles, and family profiles in the database
+- [x] Add persistent ride-request, driver-assignment, and ride-status APIs
+- [x] Replace simulated map presentation with real map tiles and geocoding
+- [x] Persist pickup and destination coordinates with booking records
+- [x] Register device push tokens and notify drivers of new requests
+- [x] Notify families when drivers accept, approach, and arrive
+- [ ] Add integration tests for auth, booking, map location, and notification event flows

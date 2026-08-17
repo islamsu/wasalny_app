@@ -55,6 +55,7 @@ const config: ExpoConfig = {
       }
   },
   android: {
+    config: { googleMaps: { apiKey: process.env.GOOGLE_MAPS_ANDROID_API_KEY ?? "" } },
     adaptiveIcon: {
       backgroundColor: "#137A5A",
       foregroundImage: "./assets/images/android-icon-foreground.png",
@@ -87,6 +88,7 @@ const config: ExpoConfig = {
   plugins: [
     "expo-router",
     ["expo-location", { locationWhenInUsePermission: "السماح لتطبيق وصلني بتحديد موقعك للعثور على أقرب سائق ومكان الركوب." }],
+    ["expo-notifications", { icon: "./assets/images/icon.png", color: "#137A5A" }],
     [
       "expo-audio",
       {

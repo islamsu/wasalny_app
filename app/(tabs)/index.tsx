@@ -7,13 +7,16 @@ import {
   StyleSheet,
   Text,
   View,
+  Platform,
 } from "react-native";
+import NativeMap from "@/components/native-map";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
 import { router } from "expo-router";
 import { useWasalnyState } from "@/lib/wasalny-state";
 import { useThemeContext } from "@/lib/theme-provider";
+import { trpc } from "@/lib/trpc";
 
 const vehicleOptions = [
   { id: "toktok", icon: "🛺", title: "اطلب توك توك", subtitle: "للمشاوير القريبة" },
@@ -35,6 +38,8 @@ export default function HomeScreen() {
   const [locationLabel, setLocationLabel] = useState("مدينة نصر، القاهرة");
   const [locationStatus, setLocationStatus] = useState<"idle" | "detecting" | "ready" | "denied">("idle");
   const [selectedNearbyDriver, setSelectedNearbyDriver] = useState<string | null>(null);
+  const [coordinates, setCoordinates] = useState({ latitude: 30.0444, longitude: 31.2357 });
+  const createRideMutation = trpc.rides.create.useMutation();
 
   const selectedVehicle = useMemo(
     () => vehicleOptions.find((item) => item.id === vehicle),
@@ -57,7 +62,11 @@ export default function HomeScreen() {
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== "granted") { setLocationStatus("denied"); return; }
     const current = await Location.getCurrentPositionAsync({});
-    setLocationLabel(`${current.coords.latitude.toFixed(4)}، ${current.coords.longitude.toFixed(4)}`);
+    setCoordinates({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+    const places = await Location.reverseGeocodeAsync({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+    const place = places[0];
+    const readableLocation = place ? [place.district, place.city, place.region].filter(Boolean).join("، ") : `${current.coords.latitude.toFixed(4)}، ${current.coords.longitude.toFixed(4)}`;
+    setLocationLabel(readableLocation);
     setLocationStatus("ready");
   };
 
@@ -98,13 +107,7 @@ export default function HomeScreen() {
             <Pressable onPress={detectLocation}><Text style={[styles.detected, { color: locationStatus === "denied" ? colors.error : colors.success }]}>{locationStatus === "detecting" ? "جاري التحديد" : locationStatus === "denied" ? "السماح بالموقع" : "تحديث الموقع"}</Text></Pressable>
           </View>
           <View style={[styles.mapPreview, { backgroundColor: colors.background }]}>
-            <View style={[styles.mapRoad, styles.roadOne]} />
-            <View style={[styles.mapRoad, styles.roadTwo]} />
-            <View style={[styles.mapRoad, styles.roadThree]} />
-            <View style={[styles.mapPin, { backgroundColor: colors.primary }]}>
-              <View style={styles.mapPinInner} />
-            </View>
-            <Text style={[styles.mapLabel, { color: colors.muted }]}>اسحب العلامة لتعديل مكان الركوب</Text>
+            {Platform.OS === "web" ? <><View style={[styles.mapRoad, styles.roadOne]} /><View style={[styles.mapRoad, styles.roadTwo]} /><View style={[styles.mapRoad, styles.roadThree]} /><View style={[styles.mapPin, { backgroundColor: colors.primary }]}><View style={styles.mapPinInner} /></View><Text style={[styles.mapLabel, { color: colors.muted }]}>اسحب العلامة لتعديل مكان الركوب</Text></> : <NativeMap latitude={coordinates.latitude} longitude={coordinates.longitude} color={colors.primary} />}
           </View>
         </View>
 
@@ -170,7 +173,7 @@ export default function HomeScreen() {
           <View style={[styles.sheet, { backgroundColor: colors.background }]}>
             <View style={styles.sheetHandle} />
             {stage === "request" && selectedVehicle ? (
-              <RideRequestSheet colors={colors} selectedVehicle={selectedVehicle} onBack={resetRide} onRequest={() => setStage("matching")} />
+              <RideRequestSheet colors={colors} selectedVehicle={selectedVehicle} onBack={resetRide} onRequest={() => { createRideMutation.mutate({ vehicleType: selectedVehicle.id === "fast" ? "fast" : selectedVehicle.id, pickupLabel: locationLabel, destinationLabel: "اختار وجهتك من الخريطة", pickupLat: coordinates.latitude, pickupLng: coordinates.longitude, estimatedFare: selectedVehicle.id === "toktok" ? 35 : 55, etaMinutes: 8 }, { onSettled: () => setStage("matching") }); }} />
             ) : null}
             {stage === "matching" ? (
               <MatchingSheet colors={colors} selectedVehicle={selectedVehicle} onCancel={resetRide} onMatched={() => setStage("active")} />

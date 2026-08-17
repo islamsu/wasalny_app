@@ -1,92 +1,27 @@
-import { eq } from "drizzle-orm";
+import { desc, eq, gt, and } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { driverProfiles, InsertUser, pushTokens, rides, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
 let _db: ReturnType<typeof drizzle> | null = null;
-
-// Lazily create the drizzle instance so local tooling can run without a DB.
-export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
-    try {
-      _db = drizzle(process.env.DATABASE_URL);
-    } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
-      _db = null;
-    }
-  }
-  return _db;
-}
+export async function getDb() { if (!_db && process.env.DATABASE_URL) { try { _db = drizzle(process.env.DATABASE_URL); } catch (error) { console.warn("[Database] Failed to connect:", error); _db = null; } } return _db; }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
-  if (!user.openId) {
-    throw new Error("User openId is required for upsert");
-  }
-
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot upsert user: database not available");
-    return;
-  }
-
-  try {
-    const values: InsertUser = {
-      openId: user.openId,
-    };
-    const updateSet: Record<string, unknown> = {};
-
-    const textFields = ["name", "email", "loginMethod"] as const;
-    type TextField = (typeof textFields)[number];
-
-    const assignNullable = (field: TextField) => {
-      const value = user[field];
-      if (value === undefined) return;
-      const normalized = value ?? null;
-      values[field] = normalized;
-      updateSet[field] = normalized;
-    };
-
-    textFields.forEach(assignNullable);
-
-    if (user.lastSignedIn !== undefined) {
-      values.lastSignedIn = user.lastSignedIn;
-      updateSet.lastSignedIn = user.lastSignedIn;
-    }
-    if (user.role !== undefined) {
-      values.role = user.role;
-      updateSet.role = user.role;
-    } else if (user.openId === ENV.ownerOpenId) {
-      values.role = "admin";
-      updateSet.role = "admin";
-    }
-
-    if (!values.lastSignedIn) {
-      values.lastSignedIn = new Date();
-    }
-
-    if (Object.keys(updateSet).length === 0) {
-      updateSet.lastSignedIn = new Date();
-    }
-
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
-      set: updateSet,
-    });
-  } catch (error) {
-    console.error("[Database] Failed to upsert user:", error);
-    throw error;
-  }
+  if (!user.openId) throw new Error("User openId is required for upsert");
+  const db = await getDb(); if (!db) { console.warn("[Database] Cannot upsert user: database not available"); return; }
+  const values: InsertUser = { openId: user.openId, name: user.name, email: user.email, phone: user.phone, loginMethod: user.loginMethod, role: user.role, appRole: user.appRole, lastSignedIn: user.lastSignedIn ?? new Date() };
+  const updateSet: Record<string, unknown> = { lastSignedIn: values.lastSignedIn };
+  for (const key of ["name", "email", "phone", "loginMethod", "role", "appRole"] as const) if (values[key] !== undefined) updateSet[key] = values[key];
+  if (user.openId === ENV.ownerOpenId) { values.role = "admin"; values.appRole = "admin"; updateSet.role = "admin"; updateSet.appRole = "admin"; }
+  await db.insert(users).values(values).onDuplicateKeyUpdate({ set: updateSet });
 }
-
-export async function getUserByOpenId(openId: string) {
-  const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
-
-  const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1);
-
-  return result.length > 0 ? result[0] : undefined;
-}
-
-// TODO: add feature queries here as your schema grows.
+export async function getUserByOpenId(openId: string) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1); return result[0]; }
+export async function getUserById(id: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(users).where(eq(users.id, id)).limit(1); return result[0]; }
+export async function ensureDriverProfile(userId: number, vehicleType: "toktok" | "car" = "car") { const db = await getDb(); if (!db) throw new Error("Database not available"); const existing = await db.select().from(driverProfiles).where(eq(driverProfiles.userId, userId)).limit(1); if (existing[0]) return existing[0]; const result = await db.insert(driverProfiles).values({ userId, vehicleType }); const created = await db.select().from(driverProfiles).where(eq(driverProfiles.id, Number((result as any).insertId))).limit(1); return created[0]; }
+export async function createRide(input: typeof rides.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); const result = await db.insert(rides).values(input); const created = await db.select().from(rides).where(eq(rides.id, Number((result as any).insertId))).limit(1); return created[0]; }
+export async function getRideForUser(id: number, userId: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(rides).where(and(eq(rides.id, id), eq(rides.familyUserId, userId))).limit(1); return result[0]; }
+export async function listFamilyRides(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(rides).where(eq(rides.familyUserId, userId)).orderBy(desc(rides.requestedAt)); }
+export async function listNearbyDrivers(lat: number, lng: number) { const db = await getDb(); if (!db) return []; const result = await db.select().from(driverProfiles).where(and(eq(driverProfiles.isOnline, true), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"), gt(driverProfiles.lastLat, lat - 0.2), gt(driverProfiles.lastLng, lng - 0.2))); return result; }
+export async function updateRideStatus(id: number, status: "accepted" | "arriving" | "active" | "completed" | "cancelled", driverUserId?: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.update(rides).set({ status, driverUserId, acceptedAt: status === "accepted" ? new Date() : undefined, completedAt: status === "completed" ? new Date() : undefined }).where(eq(rides.id, id)); }
+export async function registerPushToken(input: typeof pushTokens.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.insert(pushTokens).values(input).onDuplicateKeyUpdate({ set: { userId: input.userId, platform: input.platform, updatedAt: new Date() } }); }
+export async function getPushTokens(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(pushTokens).where(eq(pushTokens.userId, userId)); }
