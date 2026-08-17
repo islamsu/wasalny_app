@@ -24,12 +24,17 @@ export const appRouter = router({
       update: protectedProcedure.input(z.object({ settingKey: z.string().min(1), settingValue: z.string().min(1), category: z.enum(["pricing", "permissions", "subscription", "notifications"]) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.updateAdminSetting({ ...input, updatedBy: ctx.user.id }); }),
     }),
     audit: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminAuditLogs(input.limit); }),
+    users: router({
+      listFamilies: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listNonDriverUsers(); }),
+      moderateFamily: protectedProcedure.input(z.object({ userId: z.number().int().positive(), status: z.enum(["active", "blocked", "suspended_temp", "suspended_permanent"]), reason: z.string().trim().min(3, "سبب الإجراء مطلوب"), suspendedUntil: z.string().datetime().nullable().optional() })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.moderateNonDriverUser({ userId: input.userId, status: input.status, reason: input.reason, suspendedUntil: input.suspendedUntil ? new Date(input.suspendedUntil) : null, moderatedBy: ctx.user.id }); }),
+    }),
   }),
   push: router({
     register: protectedProcedure.input(z.object({ token: z.string().min(10), platform: z.enum(["android", "ios", "web"]) })).mutation(({ ctx, input }) => db.registerPushToken({ userId: ctx.user.id, token: input.token, platform: input.platform })),
   }),
   rides: router({
     create: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car", "fast"]), pickupLabel: z.string().min(1), destinationLabel: z.string().min(1), pickupLat: z.number(), pickupLng: z.number(), destinationLat: z.number().optional(), destinationLng: z.number().optional(), estimatedFare: z.number().int().nonnegative().optional(), etaMinutes: z.number().int().nonnegative().optional() })).mutation(async ({ ctx, input }) => {
+      if ((ctx.user as any).userStatus && (ctx.user as any).userStatus !== "active") throw new Error("لا يمكن إنشاء طلب أثناء إيقاف الحساب أو حظره");
       const bookingCode = `WS-${Date.now().toString().slice(-7)}`;
       const ride = await db.createRide({ ...input, bookingCode, familyUserId: ctx.user.id });
       const nearbyDrivers = await db.listNearbyDrivers(input.pickupLat, input.pickupLng);

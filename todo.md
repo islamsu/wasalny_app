@@ -77,3 +77,8 @@
 - [x] Add an isolated demo-admin fixture for settings-save verification without production test data
 - [x] Add CSV serialization and export action for admin audit logs
 - [x] Test settings persistence and CSV escaping with deterministic fixtures
+
+- [x] Add persistent non-driver user status states and moderation reasons
+- [x] Add admin user directory with searchable user data and detail view
+- [x] Add block, temporary suspension, permanent suspension, and reactivate actions
+- [x] Add audit history for every non-driver moderation decision
