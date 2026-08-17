@@ -73,3 +73,7 @@
 - [x] Add database-backed audit log for all settings changes
 - [x] Connect settings UI to server data and show audit history
 - [ ] Restart and fully verify the admin settings preview
+
+- [x] Add an isolated demo-admin fixture for settings-save verification without production test data
+- [x] Add CSV serialization and export action for admin audit logs
+- [x] Test settings persistence and CSV escaping with deterministic fixtures
