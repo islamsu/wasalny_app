@@ -20,3 +20,5 @@
 - [x] Add driver onboarding and verification UI flows
 - [x] Add interactive simulated live GPS map for active rides
 - [x] Add ride history page with route details and receipt download
+
+- [x] Add monthly subscription payment-proof upload item to driver verification
