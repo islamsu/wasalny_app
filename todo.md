@@ -88,3 +88,7 @@
 - [x] Add family violations, complaint history, and ride history aggregation API
 - [x] Add detailed family governance screen linking violations, complaints, and rides
 - [x] Add deterministic tests for notification payloads, duration handling, and family history
+
+- [x] Add ride-history selection to the family complaint form
+- [x] Persist the selected ride identifier with the complaint
+- [x] Test ride-linked complaint submission and admin history display
