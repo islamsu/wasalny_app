@@ -65,3 +65,5 @@
 - [x] Verify family/user and driver document upload validation, replacement, and submission states
 - [x] Add deterministic E2E-style tests for driver governance, admin receipt review, mock maps, and uploads
 - [x] Save a verification report with pass/fail results and known limitations
+
+- [x] Audit and repair admin settings controls, navigation, and persistence
