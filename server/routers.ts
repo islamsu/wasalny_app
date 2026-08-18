@@ -19,6 +19,7 @@ export const appRouter = router({
   ratings: router({
     create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), rating: z.number().int().min(1).max(5), comment: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const rating = await db.createRideRating({ ...input, familyUserId: ctx.user.id }); if (rating?.driverUserId) await sendPushToUserOnce(rating.driverUserId, `rating:${rating.rideId}:${rating.familyUserId}`, "rating_created", { title: "تقييم جديد", body: `حصلت على تقييم ${rating.rating} من 5 بعد الرحلة.`, data: { rideId: rating.rideId, rating: rating.rating } }); return rating; }),
     mine: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listDriverRatings(ctx.user.id); }),
+    forDriver: protectedProcedure.input(z.object({ driverUserId: z.number().int().positive() })).query(({ input }) => db.getDriverRatingSummary(input.driverUserId)),
   }),
   profile: router({
     ensureDriver: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car"]).default("car") })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.ensureDriverProfile(ctx.user.id, input.vehicleType); }),

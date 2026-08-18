@@ -128,3 +128,8 @@
 - [ ] Configure and validate real map tiles/geocoding provider credentials
 - [ ] Validate Android GPS, notifications, background/foreground, and RTL behavior
 - [x] Run regression tests and document remaining provider/device limitations
+
+- [x] Add public driver rating summary with average and count
+- [x] Add public Arabic driver rating history screen
+- [x] Connect driver profile cards to the rating history screen
+- [x] Test rating summary calculation and public navigation
