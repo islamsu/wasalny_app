@@ -102,7 +102,7 @@ export default function OAuthCallback() {
             code = urlObj.searchParams.get("code");
             state = urlObj.searchParams.get("state");
             sessionToken = urlObj.searchParams.get("sessionToken");
-          } catch (e) {
+          } catch {
             // Try parsing as relative URL with query params
             const match = url.match(/[?&](code|state|sessionToken)=([^&]+)/g);
             if (match) {
@@ -166,7 +166,7 @@ export default function OAuthCallback() {
           setStatus("error");
           setErrorMessage("No session token received");
         }
-      } catch (error) {
+      } catch {
         setStatus("error");
         setErrorMessage("تعذر إكمال تسجيل الدخول. حاول مرة أخرى.");
       }

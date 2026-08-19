@@ -30,7 +30,7 @@ const rides = [
 
 export default function AdminScreen() {
   const colors = useColors();
-  const { fontScale, subscriptionStatus, setSubscriptionStatus } = useWasalnyState();
+  const { fontScale, setSubscriptionStatus } = useWasalnyState();
   const [activeSection, setActiveSection] = useState<Section>("overview");
   const [query, setQuery] = useState("");
   const [selectedDriver, setSelectedDriver] = useState<string | null>(null);

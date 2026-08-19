@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Location from "expo-location";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { trpc } from "@/lib/trpc";
 
 import { ScreenContainer } from "@/components/screen-container";
@@ -10,6 +10,17 @@ import { useColors } from "@/hooks/use-colors";
 import { useWasalnyState } from "@/lib/wasalny-state";
 
 type VehicleChoice = "toktok" | "car";
+const DOCUMENT_MIME_TYPES = ["image/jpeg", "image/png", "application/pdf"] as const;
+type DocumentMimeType = (typeof DOCUMENT_MIME_TYPES)[number];
+
+function getDocumentMimeType(fileName: string, mimeType?: string): DocumentMimeType | null {
+  if (DOCUMENT_MIME_TYPES.includes(mimeType as DocumentMimeType)) return mimeType as DocumentMimeType;
+  const extension = fileName.toLowerCase().split(".").pop();
+  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  if (extension === "png") return "image/png";
+  if (extension === "pdf") return "application/pdf";
+  return null;
+}
 
 const documents = [
   ["id", "بطاقة الرقم القومي", "صورة واضحة من الوجهين"],
@@ -39,10 +50,15 @@ export default function DriverScreen() {
     const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], copyToCacheDirectory: true });
     if (result.canceled) return;
     const asset = result.assets[0];
-    setUploadedFiles((current) => ({ ...current, [id]: { name: asset.name, uri: asset.uri, mimeType: asset.mimeType } }));
+    const mimeType = getDocumentMimeType(asset.name, asset.mimeType);
+    if (!mimeType) {
+      Alert.alert("نوع ملف غير مدعوم", "اختر صورة JPG أو PNG أو ملف PDF.");
+      return;
+    }
+    setUploadedFiles((current) => ({ ...current, [id]: { name: asset.name, uri: asset.uri, mimeType } }));
     if (Platform.OS !== "web") {
       const dataBase64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
-      documentUploadMutation.mutate({ documentType: id, fileName: asset.name, mimeType: asset.mimeType ?? "application/octet-stream", dataBase64 });
+      documentUploadMutation.mutate({ documentType: id, fileName: asset.name, mimeType, dataBase64 });
     }
   };
 

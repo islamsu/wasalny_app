@@ -5,11 +5,10 @@ import { StatusBar } from "expo-status-bar";
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Text as NativeText } from "react-native";
+import { Platform, Text as NativeText } from "react-native";
 import { Cairo_400Regular, Cairo_600SemiBold, Cairo_700Bold, Cairo_800ExtraBold } from "@expo-google-fonts/cairo";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import "react-native-reanimated";
-import { Platform } from "react-native";
 import "@/lib/_core/nativewind-pressable";
 import { ThemeProvider } from "@/lib/theme-provider";
 import { WasalnyStateProvider } from "@/lib/wasalny-state";
@@ -40,7 +39,6 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded || fontError) SplashScreen.hideAsync();
   }, [fontsLoaded, fontError]);
-  if (!fontsLoaded && !fontError) return null;
   nativeTextWithDefaults.defaultProps = { ...(nativeTextWithDefaults.defaultProps ?? {}), style: [{ fontFamily: "Cairo_400Regular" }, nativeTextWithDefaults.defaultProps?.style] };
 
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -93,6 +91,8 @@ export default function RootLayout() {
       },
     };
   }, [initialInsets, initialFrame]);
+
+  if (!fontsLoaded && !fontError) return null;
 
   const content = (
     <WasalnyStateProvider>
