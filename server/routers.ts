@@ -14,7 +14,12 @@ export const appRouter = router({
   }),
   driverDocuments: router({
     listMine: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listDriverDocuments(ctx.user.id); }),
-    upload: protectedProcedure.input(z.object({ documentType: z.string().min(1).max(64), fileName: z.string().min(1).max(255), mimeType: z.string().min(1).max(128), dataBase64: z.string().min(1) })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.createDriverDocument({ ...input, userId: ctx.user.id }); }),
+    upload: protectedProcedure.input(z.object({
+      documentType: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "نوع المستند غير صالح"),
+      fileName: z.string().trim().min(1).max(255).refine((value) => !/[\\/]/.test(value) && value !== "." && value !== "..", "اسم الملف غير صالح"),
+      mimeType: z.enum(["image/jpeg", "image/png", "application/pdf"]),
+      dataBase64: z.string().min(4).max(15_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "بيانات الملف غير صالحة"),
+    })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.createDriverDocument({ ...input, userId: ctx.user.id }); }),
   }),
   ratings: router({
     create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), rating: z.number().int().min(1).max(5), comment: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const rating = await db.createRideRating({ ...input, familyUserId: ctx.user.id }); if (rating?.driverUserId) await sendPushToUserOnce(rating.driverUserId, `rating:${rating.rideId}:${rating.familyUserId}`, "rating_created", { title: "تقييم جديد", body: `حصلت على تقييم ${rating.rating} من 5 بعد الرحلة.`, data: { rideId: rating.rideId, rating: rating.rating } }); return rating; }),
