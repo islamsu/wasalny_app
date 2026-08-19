@@ -28,10 +28,10 @@ export const appRouter = router({
   }),
   profile: router({
     ensureDriver: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car"]).default("car") })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.ensureDriverProfile(ctx.user.id, input.vehicleType); }),
-    availability: protectedProcedure.input(z.object({ isOnline: z.boolean(), lat: z.number().optional(), lng: z.number().optional() })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.updateDriverAvailability({ ...input, userId: ctx.user.id }); }),
+    availability: protectedProcedure.input(z.object({ isOnline: z.boolean(), lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional() }).refine((input) => (input.lat === undefined) === (input.lng === undefined), { message: "يجب إرسال خط العرض وخط الطول معاً" })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.updateDriverAvailability({ ...input, userId: ctx.user.id }); }),
   }),
   drivers: router({
-    nearby: protectedProcedure.input(z.object({ lat: z.number(), lng: z.number() })).query(({ input }) => db.listNearbyDrivers(input.lat, input.lng)),
+    nearby: protectedProcedure.input(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), vehicleType: z.enum(["toktok", "car"]).optional() })).query(({ input }) => db.listNearbyDrivers(input.lat, input.lng, input.vehicleType)),
   }),
   favorites: router({
     list: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); return db.listFavoriteDrivers(ctx.user.id); }),
@@ -62,7 +62,7 @@ export const appRouter = router({
     register: protectedProcedure.input(z.object({ token: z.string().min(10), platform: z.enum(["android", "ios", "web"]) })).mutation(({ ctx, input }) => db.registerPushToken({ userId: ctx.user.id, token: input.token, platform: input.platform })),
   }),
   rides: router({
-    create: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car", "fast"]), pickupLabel: z.string().min(1), destinationLabel: z.string().min(1), pickupLat: z.number(), pickupLng: z.number(), destinationLat: z.number().optional(), destinationLng: z.number().optional(), estimatedFare: z.number().int().nonnegative().optional(), etaMinutes: z.number().int().nonnegative().optional() })).mutation(async ({ ctx, input }) => {
+    create: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car", "fast"]), pickupLabel: z.string().min(1), destinationLabel: z.string().min(1), pickupLat: z.number().min(-90).max(90), pickupLng: z.number().min(-180).max(180), destinationLat: z.number().min(-90).max(90).optional(), destinationLng: z.number().min(-180).max(180).optional(), estimatedFare: z.number().int().nonnegative().optional(), etaMinutes: z.number().int().nonnegative().optional() })).mutation(async ({ ctx, input }) => {
       if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط");
       if ((ctx.user as any).userStatus && (ctx.user as any).userStatus !== "active") throw new Error("لا يمكن إنشاء طلب أثناء إيقاف الحساب أو حظره");
       const bookingCode = `WS-${Date.now().toString().slice(-7)}`;
@@ -72,7 +72,7 @@ export const appRouter = router({
       return ride;
     }),
     mine: protectedProcedure.query(({ ctx }) => db.listFamilyRides(ctx.user.id)),
-    driverRequests: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listOpenCarRequests(); }),
+    driverRequests: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listOpenCarRequests(ctx.user.id); }),
     offers: router({
       list: protectedProcedure.input(z.object({ rideId: z.number().int().positive() })).query(({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); return db.listRideOffers(input.rideId, ctx.user.id); }),
       create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offeredPrice: z.number().int().positive(), etaMinutes: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); const offer = await db.createCarOffer({ ...input, driverUserId: ctx.user.id }); const ride = await db.getRideById(input.rideId); if (ride?.familyUserId) await sendPushToUserOnce(ride.familyUserId, `ride:${input.rideId}:offer:${offer?.id}`, "ride_offer", { title: "عرض سعر جديد", body: `أرسل سائق عرضاً بقيمة ${input.offeredPrice} ج.م للوصول خلال ${input.etaMinutes} دقيقة.`, data: { type: "ride_offer", rideId: input.rideId, offerId: offer?.id ?? null } }); return offer; }),

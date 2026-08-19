@@ -1,10 +1,31 @@
-import { desc, eq, gt, lt, and } from "drizzle-orm";
+import { desc, eq, gt, lt, and, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { adminSettings, auditLogs, driverDocuments, driverProfiles, familyComplaints, familyViolations, favoriteDrivers, InsertUser, notificationEvents, pushTokens, rideOffers, rideRatings, rides, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { canSelectCarOffer, validateCarOfferInput } from "../shared/bidding";
 import { storagePut } from "./storage";
 import { summarizeRatings } from "../shared/ratings";
+
+export const DISPATCH_RADIUS_KM = 5;
+const LOCATION_STALE_AFTER_MS = 15 * 60 * 1000;
+const ACTIVE_RIDE_STATUSES = ["accepted", "arriving", "active"] as const;
+
+export function assertValidCoordinates(lat: number, lng: number) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) throw new Error("إحداثيات الموقع غير صالحة");
+}
+
+export function distanceKm(fromLat: number, fromLng: number, toLat: number, toLng: number) {
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const earthRadiusKm = 6371;
+  const latitudeDelta = toRadians(toLat - fromLat);
+  const longitudeDelta = toRadians(toLng - fromLng);
+  const a = Math.sin(latitudeDelta / 2) ** 2 + Math.cos(toRadians(fromLat)) * Math.cos(toRadians(toLat)) * Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+export function isFreshLocation(updatedAt: Date | null) {
+  return Boolean(updatedAt && updatedAt.getTime() >= Date.now() - LOCATION_STALE_AFTER_MS);
+}
 
 let _db: ReturnType<typeof drizzle> | null = null;
 export async function getDb() { if (!_db && process.env.DATABASE_URL) { try { _db = drizzle(process.env.DATABASE_URL); } catch (error) { console.warn("[Database] Failed to connect:", error); _db = null; } } return _db; }
@@ -21,17 +42,78 @@ export async function upsertUser(user: InsertUser): Promise<void> {
 export async function getUserByOpenId(openId: string) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(users).where(eq(users.openId, openId)).limit(1); return result[0]; }
 export async function getUserById(id: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(users).where(eq(users.id, id)).limit(1); return result[0]; }
 export async function ensureDriverProfile(userId: number, vehicleType: "toktok" | "car" = "car") { const db = await getDb(); if (!db) throw new Error("Database not available"); const existing = await db.select().from(driverProfiles).where(eq(driverProfiles.userId, userId)).limit(1); if (existing[0]) return existing[0]; const result = await db.insert(driverProfiles).values({ userId, vehicleType }); const created = await db.select().from(driverProfiles).where(eq(driverProfiles.id, Number((result as any).insertId))).limit(1); return created[0]; }
-export async function updateDriverAvailability(input: { userId: number; isOnline: boolean; lat?: number; lng?: number }) { const db = await getDb(); if (!db) throw new Error("Database not available"); const profile = (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).limit(1))[0]; if (!profile) throw new Error("ملف السائق غير موجود"); if (profile.accountStatus !== "active" || profile.subscriptionStatus !== "approved") throw new Error("السائق غير مؤهل للاتصال"); await db.update(driverProfiles).set({ isOnline: input.isOnline, lastLat: input.lat ?? profile.lastLat, lastLng: input.lng ?? profile.lastLng, lastLocationAt: input.isOnline ? new Date() : profile.lastLocationAt }).where(eq(driverProfiles.userId, input.userId)); return (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).limit(1))[0]; }
+export async function updateDriverAvailability(input: { userId: number; isOnline: boolean; lat?: number; lng?: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const profile = (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).limit(1))[0];
+  if (!profile) throw new Error("ملف السائق غير موجود");
+  if (profile.accountStatus !== "active" || profile.subscriptionStatus !== "approved") throw new Error("السائق غير مؤهل للاتصال");
+  const coordinatesProvided = input.lat !== undefined || input.lng !== undefined;
+  if (coordinatesProvided && (input.lat === undefined || input.lng === undefined)) throw new Error("يجب إرسال خط العرض وخط الطول معاً");
+  if (input.lat !== undefined && input.lng !== undefined) assertValidCoordinates(input.lat, input.lng);
+  if (input.isOnline && input.lat === undefined && (profile.lastLat === null || profile.lastLng === null || !isFreshLocation(profile.lastLocationAt))) throw new Error("يجب تحديث الموقع الحالي قبل الاتصال");
+  await db.update(driverProfiles).set({
+    isOnline: input.isOnline,
+    lastLat: input.lat ?? profile.lastLat,
+    lastLng: input.lng ?? profile.lastLng,
+    lastLocationAt: input.lat !== undefined ? new Date() : profile.lastLocationAt,
+  }).where(eq(driverProfiles.userId, input.userId));
+  return (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).limit(1))[0];
+}
 export async function createRide(input: typeof rides.$inferInsert) { const db = await getDb(); if (!db) throw new Error("Database not available"); const result = await db.insert(rides).values(input); const created = await db.select().from(rides).where(eq(rides.id, Number((result as any).insertId))).limit(1); return created[0]; }
 export async function getRideForUser(id: number, userId: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(rides).where(and(eq(rides.id, id), eq(rides.familyUserId, userId))).limit(1); return result[0]; }
 export async function getRideById(id: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(rides).where(eq(rides.id, id)).limit(1); return result[0]; }
 export async function listFamilyRides(userId: number) { const db = await getDb(); if (!db) return []; return db.select().from(rides).where(eq(rides.familyUserId, userId)).orderBy(desc(rides.requestedAt)); }
-export async function listNearbyDrivers(lat: number, lng: number) { const db = await getDb(); if (!db) return []; const staleAfter = new Date(Date.now() - 15 * 60 * 1000); const result = await db.select().from(driverProfiles).where(and(eq(driverProfiles.isOnline, true), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"), gt(driverProfiles.lastLat, lat - 0.2), lt(driverProfiles.lastLat, lat + 0.2), gt(driverProfiles.lastLng, lng - 0.2), lt(driverProfiles.lastLng, lng + 0.2), gt(driverProfiles.lastLocationAt, staleAfter))); return result; }
+export async function listNearbyDrivers(lat: number, lng: number, vehicleType?: "toktok" | "car") {
+  assertValidCoordinates(lat, lng);
+  const db = await getDb();
+  if (!db) return [];
+  const staleAfter = new Date(Date.now() - LOCATION_STALE_AFTER_MS);
+  const latitudeDelta = DISPATCH_RADIUS_KM / 111;
+  const longitudeDelta = DISPATCH_RADIUS_KM / Math.max(1, 111 * Math.cos((lat * Math.PI) / 180));
+  const conditions = [
+    eq(driverProfiles.isOnline, true),
+    eq(driverProfiles.accountStatus, "active"),
+    eq(driverProfiles.subscriptionStatus, "approved"),
+    gt(driverProfiles.lastLat, lat - latitudeDelta),
+    lt(driverProfiles.lastLat, lat + latitudeDelta),
+    gt(driverProfiles.lastLng, lng - longitudeDelta),
+    lt(driverProfiles.lastLng, lng + longitudeDelta),
+    gt(driverProfiles.lastLocationAt, staleAfter),
+  ];
+  if (vehicleType) conditions.push(eq(driverProfiles.vehicleType, vehicleType));
+  const candidates = await db.select().from(driverProfiles).where(and(...conditions));
+  return candidates.filter((driver) => driver.lastLat !== null && driver.lastLng !== null && distanceKm(lat, lng, driver.lastLat, driver.lastLng) <= DISPATCH_RADIUS_KM);
+}
 export async function addFavoriteDriver(familyUserId: number, driverUserId: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); const driver = (await db.select().from(driverProfiles).where(and(eq(driverProfiles.userId, driverUserId), eq(driverProfiles.accountStatus, "active"))).limit(1))[0]; if (!driver) throw new Error("السائق غير متاح"); await db.insert(favoriteDrivers).values({ familyUserId, driverUserId }).onDuplicateKeyUpdate({ set: { driverUserId } }); return (await db.select().from(favoriteDrivers).where(and(eq(favoriteDrivers.familyUserId, familyUserId), eq(favoriteDrivers.driverUserId, driverUserId))).limit(1))[0]; }
 export async function removeFavoriteDriver(familyUserId: number, driverUserId: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.delete(favoriteDrivers).where(and(eq(favoriteDrivers.familyUserId, familyUserId), eq(favoriteDrivers.driverUserId, driverUserId))); return { success: true }; }
 export async function listFavoriteDrivers(familyUserId: number) { const db = await getDb(); if (!db) return []; return db.select({ favoriteId: favoriteDrivers.id, driverUserId: users.id, name: users.name, phone: users.phone, vehicleType: driverProfiles.vehicleType, accountStatus: driverProfiles.accountStatus, subscriptionStatus: driverProfiles.subscriptionStatus, isOnline: driverProfiles.isOnline, lastLat: driverProfiles.lastLat, lastLng: driverProfiles.lastLng }).from(favoriteDrivers).innerJoin(users, eq(users.id, favoriteDrivers.driverUserId)).innerJoin(driverProfiles, eq(driverProfiles.userId, favoriteDrivers.driverUserId)).where(eq(favoriteDrivers.familyUserId, familyUserId)); }
-export async function listOpenCarRequests() { const db = await getDb(); if (!db) return []; return db.select().from(rides).where(and(eq(rides.vehicleType, "car"), eq(rides.status, "requested"))).orderBy(desc(rides.requestedAt)); }
-export async function createCarOffer(input: { rideId: number; driverUserId: number; offeredPrice: number; etaMinutes: number }) { const db = await getDb(); if (!db) throw new Error("Database not available"); if (!validateCarOfferInput(input)) throw new Error("بيانات العرض غير صالحة"); const driver = (await db.select().from(driverProfiles).where(and(eq(driverProfiles.userId, input.driverUserId), eq(driverProfiles.vehicleType, "car"), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"))).limit(1))[0]; if (!driver) throw new Error("السائق غير مؤهل لتقديم عرض"); const ride = (await db.select().from(rides).where(eq(rides.id, input.rideId)).limit(1))[0]; if (!ride || ride.vehicleType !== "car" || ride.status !== "requested") throw new Error("الرحلة غير متاحة للعروض"); const result = await db.insert(rideOffers).values(input); return (await db.select().from(rideOffers).where(eq(rideOffers.id, Number((result as any).insertId))).limit(1))[0]; }
+export async function listOpenCarRequests(driverUserId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  const driver = (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, driverUserId)).limit(1))[0];
+  if (!driver || driver.vehicleType !== "car" || !driver.isOnline || driver.accountStatus !== "active" || driver.subscriptionStatus !== "approved" || driver.lastLat === null || driver.lastLng === null || !isFreshLocation(driver.lastLocationAt)) return [];
+  const activeTrip = (await db.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).limit(1))[0];
+  if (activeTrip) return [];
+  const latitudeDelta = DISPATCH_RADIUS_KM / 111;
+  const longitudeDelta = DISPATCH_RADIUS_KM / Math.max(1, 111 * Math.cos((driver.lastLat * Math.PI) / 180));
+  const candidates = await db.select().from(rides).where(and(eq(rides.vehicleType, "car"), eq(rides.status, "requested"), gt(rides.pickupLat, driver.lastLat - latitudeDelta), lt(rides.pickupLat, driver.lastLat + latitudeDelta), gt(rides.pickupLng, driver.lastLng - longitudeDelta), lt(rides.pickupLng, driver.lastLng + longitudeDelta))).orderBy(desc(rides.requestedAt));
+  return candidates.filter((ride) => distanceKm(driver.lastLat!, driver.lastLng!, ride.pickupLat, ride.pickupLng) <= DISPATCH_RADIUS_KM);
+}
+export async function createCarOffer(input: { rideId: number; driverUserId: number; offeredPrice: number; etaMinutes: number }) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (!validateCarOfferInput(input)) throw new Error("بيانات العرض غير صالحة");
+  const driver = (await db.select().from(driverProfiles).where(and(eq(driverProfiles.userId, input.driverUserId), eq(driverProfiles.vehicleType, "car"), eq(driverProfiles.isOnline, true), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"))).limit(1))[0];
+  if (!driver || driver.lastLat === null || driver.lastLng === null || !isFreshLocation(driver.lastLocationAt)) throw new Error("السائق غير مؤهل لتقديم عرض");
+  const activeTrip = (await db.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, input.driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).limit(1))[0];
+  if (activeTrip) throw new Error("لا يمكن تقديم عرض أثناء وجود رحلة نشطة");
+  const ride = (await db.select().from(rides).where(eq(rides.id, input.rideId)).limit(1))[0];
+  if (!ride || ride.vehicleType !== "car" || ride.status !== "requested") throw new Error("الرحلة غير متاحة للعروض");
+  if (distanceKm(driver.lastLat, driver.lastLng, ride.pickupLat, ride.pickupLng) > DISPATCH_RADIUS_KM) throw new Error("الرحلة خارج نطاقك الحالي");
+  const result = await db.insert(rideOffers).values(input);
+  return (await db.select().from(rideOffers).where(eq(rideOffers.id, Number((result as any).insertId))).limit(1))[0];
+}
 export async function listRideOffers(rideId: number, familyUserId: number) {
   const db = await getDb();
   if (!db) return [];
@@ -52,15 +134,22 @@ export async function listRideOffers(rideId: number, familyUserId: number) {
 export async function selectCarOffer(input: { rideId: number; offerId: number; familyUserId: number }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  const offer = (await db.select().from(rideOffers).where(and(eq(rideOffers.id, input.offerId), eq(rideOffers.rideId, input.rideId), eq(rideOffers.status, "pending"))).limit(1))[0];
-  if (!offer) throw new Error("العرض غير متاح");
-  const ride = (await db.select().from(rides).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId))).limit(1))[0];
-  if (!ride || !canSelectCarOffer({ rideStatus: ride.status, offerStatus: offer.status })) throw new Error("لا يمكن اختيار هذا العرض الآن");
-  const rideUpdate = await db.update(rides).set({ driverUserId: offer.driverUserId, status: "accepted", acceptedAt: new Date() }).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId), eq(rides.status, "requested")));
-  if (Number((rideUpdate as any).affectedRows ?? 0) !== 1) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
-  await db.update(rideOffers).set({ status: "rejected" }).where(eq(rideOffers.rideId, input.rideId));
-  await db.update(rideOffers).set({ status: "selected" }).where(eq(rideOffers.id, input.offerId));
-  return (await db.select().from(rideOffers).where(eq(rideOffers.id, input.offerId)).limit(1))[0];
+  return db.transaction(async (tx) => {
+    const ride = (await tx.select().from(rides).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId), eq(rides.status, "requested"))).for("update").limit(1))[0];
+    if (!ride) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
+    const offer = (await tx.select().from(rideOffers).where(and(eq(rideOffers.id, input.offerId), eq(rideOffers.rideId, input.rideId), eq(rideOffers.status, "pending"))).limit(1))[0];
+    if (!offer || !canSelectCarOffer({ rideStatus: ride.status, offerStatus: offer.status })) throw new Error("العرض غير متاح");
+    const driver = (await tx.select().from(driverProfiles).where(and(eq(driverProfiles.userId, offer.driverUserId), eq(driverProfiles.vehicleType, "car"), eq(driverProfiles.isOnline, true), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"))).for("update").limit(1))[0];
+    if (!driver || driver.lastLat === null || driver.lastLng === null || !isFreshLocation(driver.lastLocationAt)) throw new Error("السائق لم يعد متاحاً");
+    if (distanceKm(driver.lastLat, driver.lastLng, ride.pickupLat, ride.pickupLng) > DISPATCH_RADIUS_KM) throw new Error("السائق خارج نطاق الرحلة");
+    const activeTrip = (await tx.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, offer.driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).limit(1))[0];
+    if (activeTrip) throw new Error("السائق مرتبط برحلة نشطة");
+    const rideUpdate = await tx.update(rides).set({ driverUserId: offer.driverUserId, status: "accepted", acceptedAt: new Date() }).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId), eq(rides.status, "requested")));
+    if (Number((rideUpdate as any).affectedRows ?? 0) !== 1) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
+    await tx.update(rideOffers).set({ status: "rejected" }).where(and(eq(rideOffers.rideId, input.rideId), eq(rideOffers.status, "pending")));
+    await tx.update(rideOffers).set({ status: "selected" }).where(eq(rideOffers.id, input.offerId));
+    return (await tx.select().from(rideOffers).where(eq(rideOffers.id, input.offerId)).limit(1))[0];
+  });
 }
 export async function updateRideStatus(input: { id: number; status: "accepted" | "arriving" | "active" | "completed" | "cancelled"; actorUserId: number; actorRole: "family" | "driver" | "admin" }) { const db = await getDb(); if (!db) throw new Error("Database not available"); const existing = (await db.select().from(rides).where(eq(rides.id, input.id)).limit(1))[0]; if (!existing) throw new Error("الرحلة غير موجودة"); if (input.actorRole === "family" && existing.familyUserId !== input.actorUserId) throw new Error("لا يمكنك تعديل رحلة مستخدم آخر"); if (input.actorRole === "driver" && existing.driverUserId !== input.actorUserId) throw new Error("لا يمكنك تعديل رحلة غير مسندة إليك"); const transitions: Record<string, string[]> = { requested: ["accepted", "cancelled"], accepted: ["arriving", "cancelled"], arriving: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [] }; if (input.actorRole !== "admin" && !transitions[existing.status]?.includes(input.status)) throw new Error("انتقال حالة الرحلة غير مسموح"); const updatedDriverUserId = input.status === "accepted" && input.actorRole === "driver" ? input.actorUserId : existing.driverUserId; await db.update(rides).set({ status: input.status, driverUserId: updatedDriverUserId, acceptedAt: input.status === "accepted" ? new Date() : undefined, completedAt: input.status === "completed" ? new Date() : undefined }).where(eq(rides.id, input.id)); return (await db.select().from(rides).where(eq(rides.id, input.id)).limit(1))[0]; }
 export async function createDriverDocument(input: { userId: number; documentType: string; fileName: string; mimeType: string; dataBase64: string }) { const db = await getDb(); if (!db) throw new Error("Database not available"); if (!input.dataBase64 || input.dataBase64.length > 15_000_000) throw new Error("ملف المستند غير صالح أو كبير جداً"); const uploaded = await storagePut(`drivers/${input.userId}/${input.documentType}/${input.fileName}`, Buffer.from(input.dataBase64, "base64"), input.mimeType); const result = await db.insert(driverDocuments).values({ userId: input.userId, documentType: input.documentType, fileName: input.fileName, mimeType: input.mimeType, storageKey: uploaded.key, storageUrl: uploaded.url }); return (await db.select().from(driverDocuments).where(eq(driverDocuments.id, Number((result as any).insertId))).limit(1))[0]; }
