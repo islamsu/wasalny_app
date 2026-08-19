@@ -29,3 +29,15 @@
 | WAS-006 | PARTIALLY FIXED | Nearby-driver display no longer reads mock-map data; server returns actual nearby profiles. | Ride-stage UI and document/subscription state still have local representations. |
 | WAS-007 | UNFIXED | Policy test was added but not run; no CI/device integration evidence. | Run test/build/device matrix. |
 | WAS-008 | PARTIALLY FIXED | Upload metadata, path and base64 shape are validated. | Content inspection, malware scanning and retention. |
+
+## Phase 3 execution findings
+
+| ID | Priority | Area | Finding | Phase 3 status | Evidence / next action |
+| --- | --- | --- | --- | --- | --- |
+| WAS-014 | P1 | Database configuration | Generic `DATABASE_URL` allowed the MySQL client to consume an unrelated PostgreSQL URL. | **FIXED; automated regression observed indirectly** | Wasalny now reads only `WASALNY_DATABASE_URL`; governance test no longer attempts port 3306 on the Replit PostgreSQL host. |
+| WAS-015 | P1 | Expo dependencies | SDK 54 had missing/majorly incompatible native packages, including Expo 57 pickers. | **FIXED; Expo Doctor 18/18** | Compatible SDK 54 versions and native peers installed. |
+| WAS-016 | P1 | React lifecycle | Root layout returned before later hooks, violating Hook ordering. | **FIXED; lint/typecheck pass** | Loading return moved after all hooks. |
+| WAS-017 | P1 | Document upload | Client could send a MIME string rejected by the server enum. | **FIXED; typecheck pass** | Picker now allows/normalizes JPEG, PNG and PDF only. |
+| WAS-018 | P1 | Idempotency | Ride creation and ride status changes have no server request key/replay result. | **OPEN** | Add schema-backed idempotency and live retry tests. |
+| WAS-019 | P1 | Server authority | Family active-ride UI still simulates driver acceptance/progression and hardcodes trip details. | **OPEN** | Replace local stage with active ride/detail polling and role-limited server transitions. |
+| WAS-020 | P1 | Authorization | Family/driver status mutation permissions are broader than the required lifecycle policy. | **OPEN** | Add role-specific transition rules and authenticated API tests. |

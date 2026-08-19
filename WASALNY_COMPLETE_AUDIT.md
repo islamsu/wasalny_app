@@ -103,3 +103,31 @@ Three focused commits were applied after the initial audit:
 This improves server authority but does **not** prove a production workflow. Background location, Android/device behavior, database transaction behavior under real concurrency, idempotency keys for create/cancel/status actions, automated end-to-end API tests, Maps/push/provider configuration, and Android builds remain unverified. Foreground GPS only is deliberately documented as a limitation; it is not a substitute for a background-location policy.
 
 A focused Vitest file, `tests/dispatch-location.test.ts`, was added for coordinate, distance, and stale-location policy. It was **not executed** in this GitHub-only environment.
+
+## Phase 3 execution update — 19 August 2026
+
+Phase 3 moved from source inspection to commands that could be executed without external credentials.
+
+### Executed successfully
+
+- Dependency installation completed after updating the blocked Vitest dependency and security-sensitive transitive packages.
+- `pnpm check` passed.
+- `pnpm lint` passed with zero findings.
+- `pnpm test` passed **21 tests**; the live-key Maps test and logout integration test remain skipped.
+- `pnpm build` produced the server bundle.
+- The compiled Express server started and `/api/health` returned an actual successful response.
+- Expo Doctor passed **18/18 checks** after correcting SDK 54 dependency mismatches and a missing native peer.
+- Expo produced an Android Hermes/asset export.
+
+### Source fixes discovered through execution
+
+- The external MySQL URL now uses `WASALNY_DATABASE_URL`; the application no longer mistakes Replit's PostgreSQL `DATABASE_URL` for MySQL.
+- Root React Hooks now execute before the font-loading return.
+- Driver document uploads normalize/validate JPEG, PNG and PDF MIME values before invoking the server mutation.
+- Google Maps tests now validate Android Expo configuration rather than incorrectly calling the Geocoding REST API with an Android-restricted key.
+
+### Blocked, not verified
+
+No staging secrets were supplied. Therefore MySQL connectivity/migrations, OAuth, storage, Maps rendering, push, controlled accounts, real rides/bids, IDOR, concurrency, native APK/AAB and devices remain **BLOCKED**. The production question is still unanswered.
+
+See `WASALNY_INFRASTRUCTURE_REQUIREMENTS.md` for the full service matrix and exact unblock sequence.

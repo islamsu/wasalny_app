@@ -38,3 +38,21 @@ No common literal credential pattern (Google API, GitHub token, Stripe key, AWS 
 | Bid assignment concurrency | **PARTIALLY FIXED**: row locks and a transaction protect the selected ride/driver path. A live concurrent DB test is still required. |
 
 No live security test, production log sink inspection, Git-history credential scan or device authorization test was available in this phase.
+
+## Phase 3 security execution update
+
+- **Database isolation fixed:** Wasalny no longer consumes the generic runtime `DATABASE_URL`; only an explicit external-MySQL `WASALNY_DATABASE_URL` can initialize the MySQL client.
+- **Dependency/toolchain validation executed:** blocked Vitest and outdated transitive packages were updated; Expo Doctor passed 18/18 after native dependency alignment.
+- **Maps test corrected:** an Android-restricted key is no longer sent from a server-side test to a different Google REST product.
+- **Document client validation aligned:** unsupported MIME values are rejected before upload.
+
+### Security tests still blocked
+
+- Family A versus Family B ride access.
+- Driver A versus Driver B profile/location mutation.
+- Normal user versus admin endpoints.
+- Driver document owner/other-driver/admin access.
+- Concurrent bid selection against MySQL.
+- OAuth/session and logout integration.
+
+No security claim is made for these workflows. No staging identities or provider credentials were supplied.

@@ -38,3 +38,22 @@
 | Car bidding | Partially working | Server validates location/eligibility and assigns selected offer inside a transaction. Concurrency not run against a real database. |
 | Authentication privacy | Partially working | Audited client auth/OAuth logs removed and user-facing errors sanitized. End-to-end auth unverified. |
 | Offline/background location | Missing | No background service, durable outbox or reconnect test was implemented. |
+
+## Phase 3 executed evidence
+
+| Feature | Source/build result | Real infrastructure result |
+| --- | --- | --- |
+| Backend process and health | PASS — compiled server started and health endpoint responded | Staging deployment not tested |
+| Type safety | PASS — `pnpm check` | N/A |
+| Lint | PASS — zero findings | N/A |
+| Automated tests | PASS — 21; 2 skipped | Helper/router tests only, not live E2E |
+| Expo SDK compatibility | PASS — Doctor 18/18 | Device runtime not tested |
+| Android JS/Hermes bundle | PASS | Native APK/AAB and device blocked |
+| MySQL schema/migrations | Source present | BLOCKED — no staging MySQL |
+| Authentication | Source present | BLOCKED — no provider/accounts |
+| Storage | Source present | BLOCKED — no Forge endpoint/key |
+| Maps | Expo config wiring test passed | BLOCKED — no restricted key/build/device |
+| Push | Source present | BLOCKED — no project tokens/devices |
+| Family → driver ride lifecycle | Local/helper logic present | BLOCKED; local simulated stages remain |
+| Bid concurrency | Transaction code present | CONCURRENCY NOT VERIFIED |
+| IDOR/document access | Source guards present | BLOCKED — authenticated identities unavailable |
