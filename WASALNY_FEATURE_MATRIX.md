@@ -27,3 +27,14 @@
 | Offline/recovery | No proven flow | No outbox/idempotency | N/A | No | No | No |
 | Arabic RTL/accessibility | Yes | N/A | N/A | No device/a11y run | Partial | No |
 | Android release | Config only | N/A | N/A | No build evidence from this audit | Cannot verify | No |
+
+
+## Phase 2 status update
+
+| Feature | New status | Notes |
+| --- | --- | --- |
+| Nearby drivers | Partially working | Server now applies fixed 5 km Haversine radius, freshness and eligibility; client reads this API. Not device verified. |
+| Driver request dispatch | Partially working | Server derives requests from persisted driver location and active-trip state. Foreground GPS is sent on going online. |
+| Car bidding | Partially working | Server validates location/eligibility and assigns selected offer inside a transaction. Concurrency not run against a real database. |
+| Authentication privacy | Partially working | Audited client auth/OAuth logs removed and user-facing errors sanitized. End-to-end auth unverified. |
+| Offline/background location | Missing | No background service, durable outbox or reconnect test was implemented. |

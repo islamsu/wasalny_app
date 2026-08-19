@@ -26,3 +26,15 @@ No common literal credential pattern (Google API, GitHub token, Stripe key, AWS 
 3. Run authenticated/unauthenticated storage regression checks for owner, another driver and admin.
 4. Add API authorization tests for every ID-bearing mutation/query.
 5. Define data retention/deletion for location, documents, trips, notifications and audit records.
+
+
+## Phase 2 remediation update
+
+| Finding | Updated state |
+| --- | --- |
+| Unauthenticated driver-document redirect | **FIXED IN SOURCE** from the audit commit; owner/admin guard still requires live authorization regression. |
+| Sensitive client auth/OAuth logging | **FIXED FOR THE AUDITED FLOWS** in `362b300`: 52 client `console.*` calls were removed from the OAuth callback and auth hook, and raw authentication errors are no longer rendered. |
+| Dispatch data exposure | **PARTIALLY FIXED** in `1ce75e4`: the server only returns nearby requested car rides to an eligible, online, fresh, unassigned car driver. |
+| Bid assignment concurrency | **PARTIALLY FIXED**: row locks and a transaction protect the selected ride/driver path. A live concurrent DB test is still required. |
+
+No live security test, production log sink inspection, Git-history credential scan or device authorization test was available in this phase.

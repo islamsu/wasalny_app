@@ -79,3 +79,27 @@ This commit fixes one verified critical privacy exposure: stored driver identity
 3. **Make rides transactional:** model offers, assignment and lifecycle transitions in database transactions with idempotency keys and actor-specific rules.
 4. **Replace UI fixtures:** have both family and driver flows use persisted API data and defined reconnect/reload behavior.
 5. **Prove release:** add API integration tests with two identities, emulator/device tests, database migration test, Android debug/release build, push receipt tests and a production configuration checklist.
+
+
+## Phase 2 remediation update — 19 August 2026
+
+Three focused commits were applied after the initial audit:
+
+1. `1ce75e4` — server-side location-aware dispatch and transactional bid assignment.
+2. `362b300` — removal of sensitive client authentication diagnostics.
+3. `2bd761b` — replacement of the nearby-driver mock display with a server query and foreground GPS upload before a driver goes online.
+
+### What changed
+
+- Dispatch now uses a **server-owned 5 km radius** and an exact Haversine distance check. The server accepts only valid coordinates, filters to online/active/subscription-approved drivers with a location no older than **15 minutes**, and filters by requested vehicle type.
+- A driver's ride feed is derived from their own persisted current location; it returns no work to an offline, stale, ineligible, non-car, or already-busy driver.
+- Offer creation validates the same driver eligibility, freshness, active-trip and distance constraints instead of trusting the UI.
+- Offer selection now runs in a database transaction, locks the ride and selected driver rows, rechecks eligibility/active trips, conditionally assigns exactly one driver, and closes competing pending offers.
+- The family nearby-driver panel now consumes `drivers.nearby` rather than `shared/mock-map`; the driver online action sends foreground GPS coordinates and updates its local visual state only after a successful server response.
+- Sensitive `console.*` calls were removed from the OAuth callback and authentication hook; authentication failures now use generic user-safe messages.
+
+### Current limits — still NO-GO
+
+This improves server authority but does **not** prove a production workflow. Background location, Android/device behavior, database transaction behavior under real concurrency, idempotency keys for create/cancel/status actions, automated end-to-end API tests, Maps/push/provider configuration, and Android builds remain unverified. Foreground GPS only is deliberately documented as a limitation; it is not a substitute for a background-location policy.
+
+A focused Vitest file, `tests/dispatch-location.test.ts`, was added for coordinate, distance, and stale-location policy. It was **not executed** in this GitHub-only environment.

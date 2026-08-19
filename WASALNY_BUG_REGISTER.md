@@ -15,3 +15,17 @@
 | WAS-011 | P2 | Notifications | Push tickets are not processed and tokens are not pruned after failures. | Send response is returned without receipt lifecycle. | `server/push.ts` | Store tickets, poll receipts, invalidate dead tokens and retry safely. | Open |
 | WAS-012 | P2 | Android/maps | Production maps, routes, location permissions and Google key restrictions are unverified. | Managed config and mock fallback; no device/provider evidence. | `app.config.ts`, native map files | Validate physical release build with restricted key and provider billing. | Open |
 | WAS-013 | P3 | Environment | Ignore rules did not cover `.env`/non-local `.env.*` files. | Narrow gitignore pattern. | `.gitignore` | Ignore all local env variants and provide a safe template. | **Fixed in this commit** |
+
+
+## Phase 2 status update
+
+| ID | Updated status | Evidence | Remaining verification |
+| -- | -- | -- | -- |
+| WAS-001 | FIXED IN SOURCE | Prior document-owner/admin proxy guard remains in place. | Authenticated owner/other-driver/admin live regression. |
+| WAS-002 | PARTIALLY FIXED | Driver request feed now uses persisted driver location, 5 km exact distance, vehicle, fresh/online/approved and no-active-trip gates. | Real database/device flow and indexes at scale. |
+| WAS-003 | PARTIALLY FIXED | Valid coordinate ranges and 15-minute staleness threshold are enforced; exact distance is applied after candidate filter. | Background updates, spoofing controls and spatial indexing. |
+| WAS-004 | PARTIALLY FIXED | Bid selection is transactional with ride/driver locks and rechecks. | Real concurrent database test and explicit idempotency keys. |
+| WAS-005 | FIXED FOR AUDITED CLIENT FLOWS | OAuth callback and auth hook no longer log callback/user data; errors are generic. | Full release-log and crash-report configuration review. |
+| WAS-006 | PARTIALLY FIXED | Nearby-driver display no longer reads mock-map data; server returns actual nearby profiles. | Ride-stage UI and document/subscription state still have local representations. |
+| WAS-007 | UNFIXED | Policy test was added but not run; no CI/device integration evidence. | Run test/build/device matrix. |
+| WAS-008 | PARTIALLY FIXED | Upload metadata, path and base64 shape are validated. | Content inspection, malware scanning and retention. |

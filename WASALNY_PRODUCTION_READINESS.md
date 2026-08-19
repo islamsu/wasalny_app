@@ -29,3 +29,43 @@
 ## Verification status
 
 This audit did **not** run `pnpm check`, `pnpm test`, Expo/Android builds, database migrations, live provider calls or device flows because no repository runtime/deployment credentials were available in the GitHub-only audit surface. Existing documents may describe prior runs, but that is not independent release evidence.
+
+
+## Phase 2 score update
+
+**Before:** 35 / 100 — NO-GO  
+**After:** **43 / 100 — NO-GO**
+
+The score increases only for implemented source-level safeguards: source-owned geo dispatch, bid-assignment locking/transaction, server-backed nearby-driver display, document/privacy hardening, and client auth-log removal. It does **not** count as runtime proof.
+
+### Fixed or partially fixed
+
+- P0 document object authorization: fixed in source, not live-tested.
+- Location-aware dispatch: partially fixed with 5 km exact-distance, vehicle, eligibility, freshness and busy-driver gates.
+- Bid selection: partially fixed with transaction/row locking and post-lock eligibility checks.
+- Sensitive auth/OAuth client diagnostics: removed from audited flows.
+- Nearby-driver mock dependency: removed from the family panel.
+
+### Remaining P0
+
+- None newly verified after the document-access fix. The fixed document control still needs an authorization regression against the deployed storage path.
+
+### Remaining P1
+
+- No real multi-device/database lifecycle proof.
+- No background GPS strategy, reconnect handling or anti-spoofing control.
+- No idempotency keys for ride creation/cancellation/status mutations.
+- Ride-stage UI can still diverge from authoritative server state outside the nearby-driver path.
+- No CI, Android build or provider verification.
+
+### Tests / build / device status
+
+- **Added:** `tests/dispatch-location.test.ts`.
+- **Passed:** not executed in this environment.
+- **Failed:** none observed; no suite was run.
+- **Build status:** not executed.
+- **Device verification:** **DEVICE VERIFICATION NOT AVAILABLE**.
+
+### Production readiness
+
+**NO-GO.** The system is safer than the 35/100 baseline, but it cannot be considered a real transportation platform until the core family/driver flow is demonstrated end-to-end against the database on at least two identities/devices, including concurrent offer selection and GPS/network failure handling.
