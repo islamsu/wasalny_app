@@ -83,7 +83,10 @@ export async function listNearbyDrivers(lat: number, lng: number, vehicleType?: 
   ];
   if (vehicleType) conditions.push(eq(driverProfiles.vehicleType, vehicleType));
   const candidates = await db.select().from(driverProfiles).where(and(...conditions));
-  return candidates.filter((driver) => driver.lastLat !== null && driver.lastLng !== null && distanceKm(lat, lng, driver.lastLat, driver.lastLng) <= DISPATCH_RADIUS_KM);
+  return candidates
+    .filter((driver) => driver.lastLat !== null && driver.lastLng !== null && distanceKm(lat, lng, driver.lastLat, driver.lastLng) <= DISPATCH_RADIUS_KM)
+    .map((driver) => ({ ...driver, distanceKm: distanceKm(lat, lng, driver.lastLat!, driver.lastLng!) }))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
 }
 export async function addFavoriteDriver(familyUserId: number, driverUserId: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); const driver = (await db.select().from(driverProfiles).where(and(eq(driverProfiles.userId, driverUserId), eq(driverProfiles.accountStatus, "active"))).limit(1))[0]; if (!driver) throw new Error("السائق غير متاح"); await db.insert(favoriteDrivers).values({ familyUserId, driverUserId }).onDuplicateKeyUpdate({ set: { driverUserId } }); return (await db.select().from(favoriteDrivers).where(and(eq(favoriteDrivers.familyUserId, familyUserId), eq(favoriteDrivers.driverUserId, driverUserId))).limit(1))[0]; }
 export async function removeFavoriteDriver(familyUserId: number, driverUserId: number) { const db = await getDb(); if (!db) throw new Error("Database not available"); await db.delete(favoriteDrivers).where(and(eq(favoriteDrivers.familyUserId, familyUserId), eq(favoriteDrivers.driverUserId, driverUserId))); return { success: true }; }
