@@ -2,6 +2,7 @@ import type { Express } from "express";
 import * as db from "../db";
 import { ENV } from "./env";
 import { sdk } from "./sdk";
+import { assertActiveUser, assertDocumentAccess } from "./authorization";
 
 function isSafeStorageKey(key: string): boolean {
   return Boolean(key) && !key.startsWith("/") && !key.split("/").some((part) => !part || part === "." || part === "..");
@@ -25,12 +26,20 @@ export function registerStorageProxy(app: Express) {
         res.status(401).send("Authentication required");
         return;
       }
+      try {
+        assertActiveUser(user);
+      } catch {
+        res.status(403).send("Account access denied");
+        return;
+      }
       const document = await db.getDriverDocumentByStorageKey(key);
       if (!document) {
         res.status(404).send("Document not found");
         return;
       }
-      if (user.role !== "admin" && document.userId !== user.id) {
+      try {
+        assertDocumentAccess(user, document.userId);
+      } catch {
         res.status(403).send("Access denied");
         return;
       }

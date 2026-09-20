@@ -1,4 +1,4 @@
-import { boolean, double, int, mysqlEnum, mysqlTable, text, timestamp, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
+import { binary, boolean, double, foreignKey, index, int, mysqlEnum, mysqlTable, text, timestamp, varbinary, varchar, uniqueIndex } from "drizzle-orm/mysql-core";
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -17,6 +17,71 @@ export const users = mysqlTable("users", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
+
+export const authIdentities = mysqlTable("authIdentities", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "restrict", onUpdate: "restrict" }),
+  issuer: varbinary("issuer", { length: 255 }).notNull(),
+  subject: varbinary("subject", { length: 255 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  lastAuthenticatedAt: timestamp("lastAuthenticatedAt"),
+}, (table) => ({
+  issuerSubjectUnique: uniqueIndex("auth_identity_issuer_subject_unique").on(table.issuer, table.subject),
+  identityUserUnique: uniqueIndex("auth_identity_id_user_unique").on(table.id, table.userId),
+  userIdx: index("auth_identity_user_idx").on(table.userId),
+}));
+
+export const authSessions = mysqlTable("authSessions", {
+  id: varbinary("id", { length: 64 }).primaryKey(),
+  userId: int("userId").notNull().references(() => users.id, { onDelete: "restrict", onUpdate: "restrict" }),
+  identityId: int("identityId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  absoluteExpiresAt: timestamp("absoluteExpiresAt").notNull(),
+  lastActivityAt: timestamp("lastActivityAt").defaultNow().notNull(),
+  inactivityExpiresAt: timestamp("inactivityExpiresAt").notNull(),
+  revokedAt: timestamp("revokedAt"),
+  revocationReason: varchar("revocationReason", { length: 255 }),
+  authenticatedAt: timestamp("authenticatedAt").notNull(),
+  authFreshUntil: timestamp("authFreshUntil").notNull(),
+  mfaAuthenticatedAt: timestamp("mfaAuthenticatedAt"),
+  mfaContext: text("mfaContext"),
+}, (table) => ({
+  identityUserFk: foreignKey({
+    name: "auth_session_identity_user_fk",
+    columns: [table.identityId, table.userId],
+    foreignColumns: [authIdentities.id, authIdentities.userId],
+  }).onDelete("restrict").onUpdate("restrict"),
+  userIdx: index("auth_session_user_idx").on(table.userId),
+  identityIdx: index("auth_session_identity_idx").on(table.identityId),
+  absoluteExpiryIdx: index("auth_session_absolute_expiry_idx").on(table.absoluteExpiresAt),
+  inactivityExpiryIdx: index("auth_session_inactivity_expiry_idx").on(table.inactivityExpiresAt),
+  revokedIdx: index("auth_session_revoked_idx").on(table.revokedAt),
+}));
+
+export const authRefreshTokens = mysqlTable("authRefreshTokens", {
+  id: int("id").autoincrement().primaryKey(),
+  sessionId: varbinary("sessionId", { length: 64 }).notNull().references(() => authSessions.id, { onDelete: "restrict", onUpdate: "restrict" }),
+  tokenHash: binary("tokenHash", { length: 32 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  consumedAt: timestamp("consumedAt"),
+  revokedAt: timestamp("revokedAt"),
+  replacedByTokenId: int("replacedByTokenId"),
+  replayDetectedAt: timestamp("replayDetectedAt"),
+}, (table) => ({
+  replacementFk: foreignKey({
+    name: "auth_refresh_replacement_fk",
+    columns: [table.replacedByTokenId],
+    foreignColumns: [table.id],
+  }).onDelete("restrict").onUpdate("restrict"),
+  tokenHashUnique: uniqueIndex("auth_refresh_token_hash_unique").on(table.tokenHash),
+  sessionIdx: index("auth_refresh_session_idx").on(table.sessionId),
+  expiryIdx: index("auth_refresh_expiry_idx").on(table.expiresAt),
+  consumedIdx: index("auth_refresh_consumed_idx").on(table.consumedAt),
+  revokedIdx: index("auth_refresh_revoked_idx").on(table.revokedAt),
+  replacementIdx: index("auth_refresh_replacement_idx").on(table.replacedByTokenId),
+  replayIdx: index("auth_refresh_replay_idx").on(table.replayDetectedAt),
+}));
 
 export const familyViolations = mysqlTable("familyViolations", {
   id: int("id").autoincrement().primaryKey(),
@@ -47,6 +112,9 @@ export const driverProfiles = mysqlTable("driverProfiles", {
   vehicleType: mysqlEnum("vehicleType", ["toktok", "car"]).default("car").notNull(),
   vehicleNumber: varchar("vehicleNumber", { length: 32 }),
   accountStatus: mysqlEnum("accountStatus", ["active", "frozen", "suspended", "pending"]).default("pending").notNull(),
+  verificationStatus: mysqlEnum("verificationStatus", ["pending", "approved", "rejected", "revoked"]).default("pending").notNull(),
+  verifiedAt: timestamp("verifiedAt"),
+  verifiedBy: int("verifiedBy").references(() => users.id, { onDelete: "restrict", onUpdate: "restrict" }),
   subscriptionStatus: mysqlEnum("subscriptionStatus", ["unpaid", "pending", "approved", "rejected"]).default("unpaid").notNull(),
   isOnline: boolean("isOnline").default(false).notNull(),
   lastLat: double("lastLat"),
@@ -54,7 +122,9 @@ export const driverProfiles = mysqlTable("driverProfiles", {
   lastLocationAt: timestamp("lastLocationAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
-});
+}, (table) => ({
+  userUnique: uniqueIndex("driver_profile_user_unique").on(table.userId),
+}));
 
 export const rides = mysqlTable("rides", {
   id: int("id").autoincrement().primaryKey(),
@@ -142,6 +212,9 @@ export const pushTokens = mysqlTable("pushTokens", {
 
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
+export type AuthIdentity = typeof authIdentities.$inferSelect;
+export type AuthSession = typeof authSessions.$inferSelect;
+export type AuthRefreshToken = typeof authRefreshTokens.$inferSelect;
 export type DriverProfile = typeof driverProfiles.$inferSelect;
 export type FamilyViolation = typeof familyViolations.$inferSelect;
 export type FamilyComplaint = typeof familyComplaints.$inferSelect;

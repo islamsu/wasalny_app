@@ -64,6 +64,20 @@
       "when": 1787002901917,
       "tag": "0008_silly_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1789911565473,
+      "tag": "0009_premium_shotgun",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1789912037804,
+      "tag": "0010_rapid_salo",
+      "breakpoints": true
     }
   ]
 }

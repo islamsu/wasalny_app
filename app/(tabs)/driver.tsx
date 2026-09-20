@@ -46,7 +46,7 @@ export default function DriverScreen() {
   const complete = uploadedCount === documents.length;
   const statusLabel = useMemo(() => submitted ? "قيد مراجعة الإدارة" : complete ? "جاهز للإرسال" : "ارفع كل المستندات المطلوبة", [submitted, complete]);
 
-  const pickDocument = async (id: string) => {
+  const pickDocument = async (id: (typeof documents)[number][0]) => {
     const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], copyToCacheDirectory: true });
     if (result.canceled) return;
     const asset = result.assets[0];

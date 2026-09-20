@@ -5,6 +5,18 @@ import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { COOKIE_NAME } from "../shared/const";
 import * as db from "./db";
 import { sendPushToUser, sendPushToUserOnce } from "./push";
+import { assertActiveUser, assertDriverOnboarding, assertRole, assertSensitiveAdmin, DRIVER_DOCUMENT_TYPES } from "./_core/authorization";
+
+export const familyModerationInput = z.object({
+  userId: z.number().int().positive(),
+  status: z.enum(["active", "blocked", "suspended_temp", "suspended_permanent"]),
+  reason: z.string().trim().min(3, "سبب الإجراء مطلوب"),
+  suspendedUntil: z.string().datetime().nullable().optional(),
+}).superRefine((input, ctx) => {
+  if (input.status === "suspended_temp" && (!input.suspendedUntil || new Date(input.suspendedUntil).getTime() <= Date.now())) {
+    ctx.addIssue({ code: "custom", path: ["suspendedUntil"], message: "يجب تحديد تاريخ مستقبلي للإيقاف المؤقت" });
+  }
+});
 
 export const appRouter = router({
   system: systemRouter,
@@ -13,13 +25,13 @@ export const appRouter = router({
     logout: publicProcedure.mutation(({ ctx }) => { const cookieOptions = getSessionCookieOptions(ctx.req); ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 }); return { success: true } as const; }),
   }),
   driverDocuments: router({
-    listMine: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.listDriverDocuments(ctx.user.id); }),
+    listMine: protectedProcedure.query(({ ctx }) => { assertDriverOnboarding(ctx.user); return db.listDriverDocuments(ctx.user.id); }),
     upload: protectedProcedure.input(z.object({
-      documentType: z.string().trim().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/, "نوع المستند غير صالح"),
+      documentType: z.enum(DRIVER_DOCUMENT_TYPES),
       fileName: z.string().trim().min(1).max(255).refine((value) => !/[\\/]/.test(value) && value !== "." && value !== "..", "اسم الملف غير صالح"),
       mimeType: z.enum(["image/jpeg", "image/png", "application/pdf"]),
       dataBase64: z.string().min(4).max(15_000_000).regex(/^[A-Za-z0-9+/]+={0,2}$/, "بيانات الملف غير صالحة"),
-    })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.createDriverDocument({ ...input, userId: ctx.user.id }); }),
+    }).strict()).mutation(({ ctx, input }) => { assertDriverOnboarding(ctx.user); return db.createDriverDocument({ ...input, userId: ctx.user.id }); }),
   }),
   ratings: router({
     create: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), rating: z.number().int().min(1).max(5), comment: z.string().max(1000).optional() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const rating = await db.createRideRating({ ...input, familyUserId: ctx.user.id }); if (rating?.driverUserId) await sendPushToUserOnce(rating.driverUserId, `rating:${rating.rideId}:${rating.familyUserId}`, "rating_created", { title: "تقييم جديد", body: `حصلت على تقييم ${rating.rating} من 5 بعد الرحلة.`, data: { rideId: rating.rideId, rating: rating.rating } }); return rating; }),
@@ -27,11 +39,11 @@ export const appRouter = router({
     forDriver: protectedProcedure.input(z.object({ driverUserId: z.number().int().positive() })).query(({ input }) => db.getDriverRatingSummary(input.driverUserId)),
   }),
   profile: router({
-    ensureDriver: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car"]).default("car") })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.ensureDriverProfile(ctx.user.id, input.vehicleType); }),
+    ensureDriver: protectedProcedure.input(z.object({ vehicleType: z.enum(["toktok", "car"]).default("car") }).strict()).mutation(({ ctx, input }) => { assertDriverOnboarding(ctx.user); return db.ensureDriverProfile(ctx.user.id, input.vehicleType); }),
     availability: protectedProcedure.input(z.object({ isOnline: z.boolean(), lat: z.number().min(-90).max(90).optional(), lng: z.number().min(-180).max(180).optional() }).refine((input) => (input.lat === undefined) === (input.lng === undefined), { message: "يجب إرسال خط العرض وخط الطول معاً" })).mutation(({ ctx, input }) => { if ((ctx.user as any).appRole !== "driver") throw new Error("متاح للسائقين فقط"); return db.updateDriverAvailability({ ...input, userId: ctx.user.id }); }),
   }),
   drivers: router({
-    nearby: protectedProcedure.input(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), vehicleType: z.enum(["toktok", "car"]).optional() })).query(({ input }) => db.listNearbyDrivers(input.lat, input.lng, input.vehicleType)),
+    nearby: protectedProcedure.input(z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180), vehicleType: z.enum(["toktok", "car"]).optional() })).query(({ ctx, input }) => { assertRole(ctx.user, "family"); return db.listNearbyDrivers(input.lat, input.lng, input.vehicleType); }),
   }),
   favorites: router({
     list: protectedProcedure.query(({ ctx }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); return db.listFavoriteDrivers(ctx.user.id); }),
@@ -43,19 +55,19 @@ export const appRouter = router({
   }),
   admin: router({
     settings: router({
-      list: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminSettings(); }),
-      update: protectedProcedure.input(z.object({ settingKey: z.string().min(1), settingValue: z.string().min(1), category: z.enum(["pricing", "permissions", "subscription", "notifications"]) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.updateAdminSetting({ ...input, updatedBy: ctx.user.id }); }),
+      list: protectedProcedure.query(({ ctx }) => { assertRole(ctx.user, "admin"); return db.listAdminSettings(ctx.user.id); }),
+      update: protectedProcedure.input(z.object({ settingKey: z.string().min(1), settingValue: z.string().min(1), category: z.enum(["pricing", "permissions", "subscription", "notifications"]) })).mutation(({ ctx, input }) => { assertSensitiveAdmin(ctx.user); return db.updateAdminSetting({ ...input, updatedBy: ctx.user.id }); }),
     }),
-    audit: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listAdminAuditLogs(input.limit); }),
+    audit: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(100).default(50) })).query(({ ctx, input }) => { assertRole(ctx.user, "admin"); return db.listAdminAuditLogs(input.limit, ctx.user.id); }),
     documents: router({
-      list: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listDriverDocuments(); }),
-      reviewDocument: protectedProcedure.input(z.object({ documentId: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewReason: z.string().trim().min(3) })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.reviewDriverDocument({ ...input, reviewedBy: ctx.user.id }); }),
+      list: protectedProcedure.query(({ ctx }) => { assertRole(ctx.user, "admin"); return db.listDriverDocuments(undefined, ctx.user.id); }),
+      reviewDocument: protectedProcedure.input(z.object({ documentId: z.number().int().positive(), status: z.enum(["approved", "rejected"]), reviewReason: z.string().trim().min(3) })).mutation(({ ctx, input }) => { assertSensitiveAdmin(ctx.user); return db.reviewDriverDocument({ ...input, reviewedBy: ctx.user.id }); }),
     }),
     users: router({
-      listFamilies: protectedProcedure.query(({ ctx }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.listNonDriverUsers(); }),
-      familyHistory: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.getFamilyGovernanceHistory(input.userId); }),
-      updateComplaint: protectedProcedure.input(z.object({ complaintId: z.number().int().positive(), status: z.enum(["open", "in_review", "resolved", "closed"]), adminNotes: z.string().max(2000).default("") })).mutation(({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); return db.updateFamilyComplaint({ ...input, updatedBy: ctx.user.id }); }),
-      moderateFamily: protectedProcedure.input(z.object({ userId: z.number().int().positive(), status: z.enum(["active", "blocked", "suspended_temp", "suspended_permanent"]), reason: z.string().trim().min(3, "سبب الإجراء مطلوب"), suspendedUntil: z.string().datetime().nullable().optional() })).mutation(async ({ ctx, input }) => { if (ctx.user.role !== "admin" && (ctx.user as any).appRole !== "admin") throw new Error("Admin access required"); const until = input.suspendedUntil ? new Date(input.suspendedUntil) : null; if (input.status === "suspended_temp" && (!until || until.getTime() <= Date.now())) throw new Error("يجب تحديد تاريخ مستقبلي للإيقاف المؤقت"); const user = await db.moderateNonDriverUser({ userId: input.userId, status: input.status, reason: input.reason, suspendedUntil: until, moderatedBy: ctx.user.id }); const name = user?.name ?? "المستخدم العزيز"; const body = input.status === "active" ? `تمت إعادة تفعيل حسابك في وصلني. السبب: ${input.reason}` : input.status === "blocked" ? `تم حظر حسابك في وصلني. السبب: ${input.reason}` : input.status === "suspended_permanent" ? `تم إيقاف حسابك نهائياً في وصلني. السبب: ${input.reason}` : `تم إيقاف حسابك مؤقتاً حتى ${until?.toLocaleDateString("ar-EG")}. السبب: ${input.reason}`; const notification = await sendPushToUser(input.userId, { title: input.status === "active" ? "تمت إعادة تفعيل حسابك" : "تحديث حالة حسابك", body, data: { type: "family_moderation", status: input.status, reason: input.reason, suspendedUntil: until?.toISOString() ?? null } }); return { user, notification, message: `تم تحديث حالة ${name} وإرسال الإشعار` }; }),
+      listFamilies: protectedProcedure.query(({ ctx }) => { assertRole(ctx.user, "admin"); return db.listNonDriverUsers(ctx.user.id); }),
+      familyHistory: protectedProcedure.input(z.object({ userId: z.number().int().positive() })).query(({ ctx, input }) => { assertRole(ctx.user, "admin"); return db.getFamilyGovernanceHistory(input.userId, ctx.user.id); }),
+      updateComplaint: protectedProcedure.input(z.object({ complaintId: z.number().int().positive(), status: z.enum(["open", "in_review", "resolved", "closed"]), adminNotes: z.string().max(2000).default("") })).mutation(({ ctx, input }) => { assertSensitiveAdmin(ctx.user); return db.updateFamilyComplaint({ ...input, updatedBy: ctx.user.id }); }),
+      moderateFamily: protectedProcedure.input(familyModerationInput).mutation(async ({ ctx, input }) => { assertSensitiveAdmin(ctx.user); const until = input.suspendedUntil ? new Date(input.suspendedUntil) : null; const user = await db.moderateNonDriverUser({ userId: input.userId, status: input.status, reason: input.reason, suspendedUntil: until, moderatedBy: ctx.user.id }); const name = user?.name ?? "المستخدم العزيز"; const body = input.status === "active" ? `تمت إعادة تفعيل حسابك في وصلني. السبب: ${input.reason}` : input.status === "blocked" ? `تم حظر حسابك في وصلني. السبب: ${input.reason}` : input.status === "suspended_permanent" ? `تم إيقاف حسابك نهائياً في وصلني. السبب: ${input.reason}` : `تم إيقاف حسابك مؤقتاً حتى ${until?.toLocaleDateString("ar-EG")}. السبب: ${input.reason}`; const notification = await sendPushToUser(input.userId, { title: input.status === "active" ? "تمت إعادة تفعيل حسابك" : "تحديث حالة حسابك", body, data: { type: "family_moderation", status: input.status, reason: input.reason, suspendedUntil: until?.toISOString() ?? null } }); return { user, notification, message: `تم تحديث حالة ${name} وإرسال الإشعار` }; }),
     }),
   }),
   push: router({
@@ -79,8 +91,9 @@ export const appRouter = router({
       select: protectedProcedure.input(z.object({ rideId: z.number().int().positive(), offerId: z.number().int().positive() })).mutation(async ({ ctx, input }) => { if ((ctx.user as any).appRole !== "family") throw new Error("متاح للعائلات فقط"); const offer = await db.selectCarOffer({ ...input, familyUserId: ctx.user.id }); if (offer?.driverUserId) await sendPushToUserOnce(offer.driverUserId, `ride:${input.rideId}:offer-selected:${input.offerId}`, "ride_offer_selected", { title: "تم اختيار عرضك", body: "اختارت العائلة عرضك ويمكنك متابعة الرحلة.", data: { type: "ride_offer_selected", rideId: input.rideId, offerId: input.offerId } }); return offer; }),
     }),
     status: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["accepted", "arriving", "active", "completed", "cancelled"]) })).mutation(async ({ ctx, input }) => {
-      const actorRole = ((ctx.user as any).appRole ?? (ctx.user.role === "admin" ? "admin" : "family")) as "family" | "driver" | "admin";
-      const updatedRide = await db.updateRideStatus({ id: input.id, status: input.status, actorUserId: ctx.user.id, actorRole });
+      assertActiveUser(ctx.user);
+      const actorRole = ctx.user.appRole;
+      const updatedRide = await db.updateRideStatus({ id: input.id, status: input.status, actorUserId: ctx.user.id });
       const recipientId = actorRole === "driver" ? updatedRide?.familyUserId : updatedRide?.driverUserId;
       if (recipientId && recipientId !== ctx.user.id) {
         const body = input.status === "accepted" ? "تم قبول طلبك وسيصل السائق قريباً." : input.status === "arriving" ? "السائق في الطريق إليك." : input.status === "active" ? "بدأت الرحلة." : input.status === "completed" ? "اكتملت رحلتك." : "تم تحديث حالة رحلتك.";

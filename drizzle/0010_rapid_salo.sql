@@ -1,0 +1,1 @@
+ALTER TABLE `driverProfiles` ADD CONSTRAINT `driver_profile_user_unique` UNIQUE(`userId`);
