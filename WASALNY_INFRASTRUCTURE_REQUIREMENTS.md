@@ -1,5 +1,32 @@
 # Wasalny Infrastructure Requirements
 
+## Latest infrastructure status — 20 September 2026
+
+**Decision: NO-GO — 48/100.** The user confirmed a dedicated non-production MySQL database, `wasalny_staging`. It was empty before migration, and no production environment was touched.
+
+### Staging database evidence
+
+| Check | Executed result |
+| --- | --- |
+| TLS configuration | The original `mysql2` configuration ignored `ssl-mode`; shared verified-TLS handling was added in `server/_core/mysql-config.ts`. `WASALNY_DATABASE_CA_PATH` is optional and may point to an uploaded public CA. Environment-specific hosts and workspace paths are intentionally omitted. |
+| Server/transport | MySQL **8.4.8**, connected through `mysql2` + Drizzle using **TLS_AES_256_GCM_SHA384**. |
+| Application connection | The actual `server/db.ts` `getDb()` path executed `SELECT DATABASE(), VERSION()` successfully against `wasalny_staging` after the shared TLS configuration fix. |
+| Initial state | Dedicated staging database confirmed; initially empty. |
+| Migration consistency | All nine migrations reviewed against snapshot/schema; `drizzle-kit generate` reported no schema changes. |
+| Migration execution | `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:push` succeeded. All nine rows exist in `__drizzle_migrations`. |
+| Live schema | `INFORMATION_SCHEMA` shows 13 application tables; every application table has zero rows. All 123 application columns match types, nullability, defaults, auto-increment, and on-update timestamps after normalizing equivalent MySQL `boolean`/`tinyint(1)` and `(now())`/`now()`/`CURRENT_TIMESTAMP` forms. No actual schema mismatch exists. |
+| Constraints and migration integrity | Live primary keys and eight unique constraints match snapshots. SHA-256 hashes of all nine live migration journal entries match the checked-in SQL. No foreign keys exist. |
+| Entity mapping | Vehicles/locations are embedded in `driverProfiles`; requests/trips map to `rides`; bids to `rideOffers`; favorites to `favoriteDrivers`; reviews to `rideRatings`; notifications to `notificationEvents` and `pushTokens`. |
+| Final local checks | Five MySQL configuration tests passed. `pnpm check`, `pnpm lint`, and `pnpm build` passed. `env -u WASALNY_DATABASE_URL COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test` passed 26 tests with 2 skipped; database isolation was intentional, not a staging end-to-end run. |
+
+### Remaining infrastructure blockers
+
+No authentication settings, `JWT_SECRET`, or client OAuth settings were available. No actual OAuth authentication occurred and no accounts were created. Login, IDOR, rides, bidding, dispatch, concurrency, idempotency, and device testing are **BLOCKED — NOT RUN**, not pass/fail outcomes. The client is **Expo React Native, not Flutter**; a Flutter-specific execution path is not applicable.
+
+## Historical local-only validation — 19 August 2026
+
+The following section records the earlier environment, not the current staging status. The latest evidence above supersedes its database blockers.
+
 **Phase 3 evidence date:** 19 August 2026  
 **Source baseline:** `f18c8f30510abf5997f6bce112a78d79461ada81` plus the Phase 3 fixes documented below  
 **Environment used:** isolated local validation environment with no Wasalny staging credentials and no physical Android device

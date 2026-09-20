@@ -1,5 +1,24 @@
 # Wasalny Feature Matrix
 
+## Latest evidence — 20 September 2026
+
+**Current decision: NO-GO — 48/100.** The dedicated non-production `wasalny_staging` database was verified and migrated; production was not touched. This changes database setup from blocked to verified, but does not verify any product workflow.
+
+### Staging database evidence
+
+| Capability | Latest result |
+| --- | --- |
+| Connection security | PASS — shared `server/_core/mysql-config.ts` compensates for `mysql2` ignoring `ssl-mode`; verified MySQL 8.4.8 with `TLS_AES_256_GCM_SHA384`. Optional `WASALNY_DATABASE_CA_PATH` supports an uploaded public CA. |
+| Migration review | PASS — all nine migrations reviewed against schema/snapshots; generation reported no schema changes. |
+| Migration execution | PASS — exact command `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:push`; nine `__drizzle_migrations` records present. |
+| Live schema | PASS — 13 app tables, all zero rows; all 123 app columns match types, nullability, defaults, auto-increment, and on-update timestamps after normalizing equivalent `boolean`/`tinyint(1)` and `(now())`/`now()`/`CURRENT_TIMESTAMP` forms. No actual schema mismatch. |
+| Keys, constraints, journals | PASS — primary keys and eight unique constraints match snapshots; SHA-256 hashes of all nine live migration journal entries match checked-in SQL; no foreign keys. |
+| Domain/table mapping | VERIFIED — vehicle/location in `driverProfiles`; requests/trips in `rides`; bids in `rideOffers`; favorites in `favoriteDrivers`; reviews in `rideRatings`; notifications in `notificationEvents`/`pushTokens`. |
+| Final local validation | PASS — five MySQL configuration tests, `pnpm check`, `pnpm lint`, and `pnpm build`; isolated `env -u WASALNY_DATABASE_URL COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test` passed 26 tests with 2 skipped. Intentional isolation means this was not staging E2E. |
+| Auth and workflows | **BLOCKED — NOT RUN** — no auth settings, `JWT_SECRET`, client OAuth settings, or test accounts; no actual OAuth authentication and no login, IDOR, ride, bidding, dispatch, concurrency, idempotency, or device result. |
+
+The current application stack is **Expo React Native, not Flutter**; Flutter-specific validation is not applicable.
+
 **Legend:** “Verified” means established from source/constraints only; it does not mean a real device, database, provider or multi-user runtime was exercised.
 
 | Feature | UI | Backend | Database | Tested | Working | Production Ready |

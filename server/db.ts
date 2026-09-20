@@ -2,6 +2,7 @@ import { desc, eq, gt, lt, and, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { adminSettings, auditLogs, driverDocuments, driverProfiles, familyComplaints, familyViolations, favoriteDrivers, InsertUser, notificationEvents, pushTokens, rideOffers, rideRatings, rides, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
+import { mysqlConnectionOptions } from "./_core/mysql-config";
 import { canSelectCarOffer, validateCarOfferInput } from "../shared/bidding";
 import { storagePut } from "./storage";
 import { summarizeRatings } from "../shared/ratings";
@@ -28,7 +29,7 @@ export function isFreshLocation(updatedAt: Date | null) {
 }
 
 let _db: ReturnType<typeof drizzle> | null = null;
-export async function getDb() { if (!_db && ENV.databaseUrl) { try { _db = drizzle(ENV.databaseUrl); } catch (error) { console.warn("[Database] Failed to connect:", error); _db = null; } } return _db; }
+export async function getDb() { if (!_db && ENV.databaseUrl) { _db = drizzle({ connection: mysqlConnectionOptions() }); } return _db; }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");

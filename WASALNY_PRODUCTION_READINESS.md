@@ -1,5 +1,26 @@
 # Wasalny Production Readiness
 
+## Current verdict — 20 September 2026
+
+**NO-GO — 48 / 100.** The score is retained from Phase 3 without an unexplained increase. New evidence verifies only the dedicated staging database, TLS, migrations, and empty live schema; it does not prove an operational transportation workflow. Production was not touched.
+
+### Staging database evidence
+
+- The user confirmed the dedicated non-production database `wasalny_staging`. It was initially empty.
+- Because the original `mysql2` configuration ignored `ssl-mode`, verified TLS was centralized in `server/_core/mysql-config.ts`. Optional `WASALNY_DATABASE_CA_PATH` supports an uploaded public CA. No environment-specific host or workspace path appears in this report.
+- `mysql2` + Drizzle verified MySQL **8.4.8** and **TLS_AES_256_GCM_SHA384**.
+- All nine migrations were reviewed against the schema/snapshots; generation reported no schema changes. `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:push` succeeded, and all nine records exist in `__drizzle_migrations`.
+- `INFORMATION_SCHEMA` reports 13 application tables, all with zero rows. All 123 application columns match types, nullability, defaults, auto-increment, and on-update timestamps after normalizing equivalent MySQL `boolean`/`tinyint(1)` and `(now())`/`now()`/`CURRENT_TIMESTAMP` forms. No actual schema mismatch was found.
+- Primary keys and eight unique constraints match the snapshots. SHA-256 hashes of all nine live migration journal entries match the checked-in SQL. There are no foreign keys.
+- The apparent domain naming differences are accounted for: vehicles/locations are embedded in `driverProfiles`; requests/trips use `rides`; bids use `rideOffers`; favorites use `favoriteDrivers`; reviews use `rideRatings`; notifications use `notificationEvents` and `pushTokens`.
+- Five focused MySQL configuration tests passed. Final local checks passed: `pnpm check`, `pnpm lint`, and `pnpm build`; `env -u WASALNY_DATABASE_URL COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test` passed 26 tests with 2 skipped. Intentional database isolation means this was not a staging end-to-end run.
+
+### Release evidence still blocked
+
+No auth settings, `JWT_SECRET`, or client OAuth settings were present. No actual OAuth authentication occurred, no accounts were created, and no login, IDOR, ride, bidding, dispatch, concurrency, idempotency, or device test was performed. Each is **BLOCKED — NOT RUN**, not failed or passed. The product is **Expo React Native, not Flutter**, so the requested Flutter path is not applicable.
+
+The older scores and verdicts below are retained as historical audit phases.
+
 ## Verdict: NO-GO
 
 **Overall score: 35 / 100**

@@ -1,5 +1,23 @@
 # Wasalny Security Audit
 
+## Latest security status — 20 September 2026
+
+**NO-GO — overall readiness remains 48/100.** The new evidence verifies database transport and schema deployment in the user-confirmed dedicated non-production `wasalny_staging` database only. Production was not touched.
+
+### Staging database evidence
+
+- The original `mysql2` configuration ignored `ssl-mode`; shared verified-TLS handling in `server/_core/mysql-config.ts` was added. Optional `WASALNY_DATABASE_CA_PATH` may reference an uploaded public CA. This document records neither an environment-specific host nor a workspace-specific path.
+- `mysql2` + Drizzle verified MySQL **8.4.8** using **TLS_AES_256_GCM_SHA384**. Staging was initially empty.
+- All nine migrations were reviewed against schema/snapshots, generation reported no schema changes, and `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:push` succeeded. All nine `__drizzle_migrations` records exist.
+- `INFORMATION_SCHEMA` shows 13 application tables, all with zero rows. All 123 application columns match types, nullability, defaults, auto-increment, and on-update timestamps after normalizing equivalent MySQL `boolean`/`tinyint(1)` and `(now())`/`now()`/`CURRENT_TIMESTAMP` forms. No actual schema mismatch was found.
+- Live primary keys and eight unique constraints match snapshots. SHA-256 hashes of all nine live migration journal entries match the checked-in SQL. No foreign keys exist.
+- Domain storage was accounted for: vehicle/location in `driverProfiles`; requests/trips in `rides`; bids in `rideOffers`; favorites in `favoriteDrivers`; reviews in `rideRatings`; notifications in `notificationEvents` and `pushTokens`.
+- Five focused MySQL configuration tests passed. Final local checks passed: `pnpm check`, `pnpm lint`, and `pnpm build`; `env -u WASALNY_DATABASE_URL COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test` passed 26 tests with 2 skipped. The database was intentionally isolated, so this was not staging end-to-end evidence.
+
+### Security verification not performed
+
+No auth settings, `JWT_SECRET`, client OAuth settings, or controlled accounts were available. No actual OAuth authentication occurred. Login/session, cross-user IDOR, ride authorization, bidding/dispatch, concurrency, idempotency, and device security tests are **BLOCKED — NOT RUN**, not pass/fail results. The client is **Expo React Native, not Flutter**; Flutter-specific security testing is not applicable.
+
 ## Method
 
 Static review of all tracked text/source/configuration/migration/test files at the audited main revision. Common secret patterns were scanned in tracked files; deployment values, Git history, object storage contents and live endpoints were not available.

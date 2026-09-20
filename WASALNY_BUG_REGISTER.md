@@ -1,5 +1,21 @@
 # Wasalny Bug Register
 
+## Latest status — 20 September 2026
+
+**Decision: NO-GO (48/100).** A user-confirmed, dedicated non-production database named `wasalny_staging` was used; production was not touched. Database provisioning is no longer blocked, but authentication and all real user workflows remain blocked rather than passed or failed.
+
+### Staging database evidence
+
+- The original `mysql2` connection configuration ignored `ssl-mode`. A shared verified-TLS configuration was added in `server/_core/mysql-config.ts`; optional `WASALNY_DATABASE_CA_PATH` can reference an uploaded public CA. No environment-specific host or workspace path is recorded here.
+- A `mysql2` + Drizzle connection verified MySQL **8.4.8** and cipher **TLS_AES_256_GCM_SHA384**. The database was initially empty.
+- All nine checked-in migrations were reviewed against the Drizzle schema and snapshots. Generation reported no schema changes, and `COREPACK_ENABLE_PROJECT_SPEC=0 pnpm db:push` succeeded.
+- All nine records are present in `__drizzle_migrations`. `INFORMATION_SCHEMA` reports 13 application tables, all with zero rows. All 123 application columns match for type, nullability, default, auto-increment, and on-update timestamp behavior after normalizing MySQL's equivalent `boolean`/`tinyint(1)` and `(now())`/`now()`/`CURRENT_TIMESTAMP` forms. No actual schema mismatch was found.
+- Live primary keys and all eight unique constraints match the snapshots. SHA-256 hashes of all nine live migration journal entries match the checked-in SQL. No foreign keys are present.
+- Naming correspondence was confirmed: vehicles/locations are embedded in `driverProfiles`; requests/trips use `rides`; bids use `rideOffers`; favorites use `favoriteDrivers`; reviews use `rideRatings`; notifications use `notificationEvents` and `pushTokens`.
+- Five new MySQL configuration tests passed. Final local checks also passed: `pnpm check`, `pnpm lint`, and `pnpm build`; `env -u WASALNY_DATABASE_URL COREPACK_ENABLE_PROJECT_SPEC=0 pnpm test` passed 26 tests with 2 skipped. Database isolation was intentional, so this was not a staging end-to-end run.
+- No authentication settings, `JWT_SECRET`, or client OAuth settings were present. No actual OAuth authentication occurred and no accounts were created, so login, IDOR, ride, bidding, dispatch, concurrency, idempotency, and device tests were **BLOCKED — NOT RUN**, not failures or passes.
+- The current client is **Expo React Native, not Flutter**; a requested Flutter validation path is not applicable.
+
 | ID | Severity | Area | Problem | Root Cause | File | Recommended Fix | Status |
 | -- | -------- | ---- | ------- | ---------- | ---- | --------------- | ------ |
 | WAS-001 | P0 | Privacy / storage | Driver document URLs could be requested without authentication when an object key was known. | Storage proxy signed every key without caller or owner check. | `server/_core/storageProxy.ts` | Authenticate `drivers/…` requests and allow only owner/admin; reject traversal-like keys. | **Fixed in this commit; runtime regression required** |
