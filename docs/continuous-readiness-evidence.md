@@ -5,6 +5,28 @@ mock-based tests are not evidence of real Firebase authentication or device read
 
 ## Executed evidence
 
+### Real Google sign-in and session issuance — 21 September 2026
+
+- The human tester completed Google sign-in and initially received the actual
+  enrollment denial `IDENTITY_PRELINK_REQUIRED` (not `REGISTRATION_CLOSED`).
+- Read-only Firebase inspection found one recent, enabled, email-verified Google
+  identity, following the previously observed empty provider inventory.
+- Only that tester UID was approved for ordinary-family enrollment; global
+  registration stayed closed. The tester repeated Google sign-in and confirmed
+  reaching the application.
+- A guarded, verified-TLS **read-only** transaction against `wasalny_staging`,
+  scoped to the approved issuer/subject and returning aggregates only, confirmed:
+  one linked identity, one active ordinary-family account, zero elevated
+  accounts, one active session, and one current unconsumed refresh record.
+- There were zero consumed rotations, revoked sessions/refresh records, driver
+  profiles, or rides at inspection. These operations therefore remain unverified.
+- This is real Google/provider-to-Wasalny session-issuance evidence. It is not
+  Phone authentication, refresh/replay/logout, two-account IDOR, or an approved
+  driver ride workflow. No session tokens were extracted, minted or impersonated.
+- The authenticated browser belongs to the human tester; the automation browser
+  does not inherit its memory-only session. Phone possession verification and
+  additional legitimate controlled identities remain external prerequisites.
+
 ### Secure staging ingress and provider preflight — 21 September 2026
 
 - Exact-origin, loopback-peer staging verification now permits genuine forwarded
@@ -138,14 +160,16 @@ server ride state rather than simulated progression.
 - The server project, service-account secret and session signing key are now
   configured and validated. Android `google-services.json` remains outstanding
   within the deferred device work; it is not a blocker for web/backend checks.
-- No real staging provider users currently exist. Legitimate Google/Phone
-  sign-in by human-controlled test identities is required before live
-  application sessions, refresh/logout, or authenticated IDOR can be exercised.
+- One legitimate Google tester now has a real ordinary-family Wasalny session.
+  Phone authentication and further controlled identities are still required
+  for the remaining acceptance cases; automation has not inherited the human
+  browser's memory-only session.
 - The current workspace's exact HTTPS origin and constrained ingress are verified.
   Revalidate for a changed hostname/topology or production ingress; no general
   forwarding trust or production readiness follows from staging evidence.
-- Real Firebase login, wrong-project/revoked/disabled-user exercises, MySQL session
-  refresh concurrency, authenticated API ride E2E and cross-account IDOR remain
+- Phone login, real wrong-project/revoked/disabled-user exercises, MySQL session
+  refresh concurrency, refresh/logout acceptance, authenticated API ride E2E
+  and cross-account IDOR remain
   **NOT EXECUTED**.
 - SHA-1/SHA-256, native Firebase sign-in and real Android authentication:
   **DEFERRED — DEVICE/SIGNING VERIFICATION**, not PASS. No Expo account connection,

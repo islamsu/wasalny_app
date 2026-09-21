@@ -60,10 +60,12 @@ possession verification directly in the application, never in chat.
 Global registration remains closed. After a real human-controlled tester is
 identified and approved, `WASALNY_AUTH_NEW_USER_UID_ALLOWLIST` can permit only
 that verified Firebase UID to enroll as a normal family user. The allowlist is
-currently unset. An initial legitimate sign-in may therefore report
-`REGISTRATION_CLOSED`; this does not authorize bypassing enrollment or creating
-privileged users. Session refresh/logout and authenticated ride/IDOR checks
-remain unexecuted until genuine identities and the required role approvals exist.
+restricted to the explicitly approved real Google tester. Other legitimate but
+unapproved identities report `IDENTITY_PRELINK_REQUIRED`; this does not authorize
+bypassing enrollment or creating privileged users. The Google tester reached
+the app, and read-only staging evidence confirmed the ordinary-family mapping
+and session issuance. Phone, refresh/logout and authenticated ride/IDOR checks
+remain unexecuted until the additional legitimate sessions and role approvals exist.
 
 The application can now be visually inspected without claiming those security
 gates passed. Android signing and physical-device checks remain deferred.

@@ -9,10 +9,12 @@ business-only MySQL concurrency harness, and migration 0011 verification.
 The existing app is now launchable for workspace visual inspection; see
 [workspace preview](docs/workspace-preview.md) for its remaining authentication gates.
 Firebase Admin read access and Google/Phone provider configuration are now
-verified. No provider users exist; real Firebase/HTTP identity E2E still requires
-human-controlled Google/Phone sign-in. Staging ingress and the exact Firebase
-domain are verified; browser preflight reached Google account entry, not a
-successful authenticated session. Android signing
+verified. One human-controlled Google tester has now reached the app; guarded
+read-only staging queries confirm ordinary-family enrollment, identity linking,
+and active session/refresh-record issuance without privilege elevation.
+Phone, refresh/logout, cross-account IDOR, and authenticated ride acceptance
+remain unverified. Staging ingress and the exact Firebase domain are verified.
+Android signing
 and real-device authentication are **DEFERRED — DEVICE/SIGNING VERIFICATION**.
 The dated sections below are historical, not the current implementation inventory.
 
