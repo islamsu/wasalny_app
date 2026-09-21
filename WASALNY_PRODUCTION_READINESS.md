@@ -6,7 +6,9 @@
 [current executed evidence](docs/continuous-readiness-evidence.md) for the
 Firebase/session implementation, 247 passing offline tests, separate passing
 business-only MySQL concurrency harness, and migration 0011 verification.
-Real Firebase/HTTP identity E2E remains blocked on configuration. Android signing
+Firebase Admin read access and Google/Phone provider configuration are now
+verified. No provider users exist; real Firebase/HTTP identity E2E still requires
+human-controlled Google/Phone sign-in and verified browser ingress. Android signing
 and real-device authentication are **DEFERRED — DEVICE/SIGNING VERIFICATION**.
 The dated sections below are historical, not the current implementation inventory.
 

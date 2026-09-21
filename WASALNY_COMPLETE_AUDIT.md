@@ -5,8 +5,10 @@
 See [current executed evidence](docs/continuous-readiness-evidence.md) for the
 implemented Firebase/session and business-integrity checkpoint, migration 0011,
 local validation and real business-only MySQL concurrency test. Production
-readiness remains **48/100 — NO-GO**. Real provider/device verification is not
-claimed. The dated sections below are retained as historical evidence.
+readiness remains **48/100 — NO-GO**. Real Firebase Admin read access and provider
+configuration are verified, but no genuine end-user sign-in, authenticated ride
+flow, or device verification is claimed. The dated sections below are retained
+as historical evidence.
 
 ## Latest audit status — 20 September 2026
 

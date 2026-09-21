@@ -6,6 +6,9 @@
 executed tests, and remaining provider/admin/deployment limitations are recorded
 in [current evidence](docs/continuous-readiness-evidence.md). Sensitive admin
 writes remain fail-closed. Mocked auth tests are not real Firebase or device evidence.
+The replacement staging credential now passes project/key validation and real
+Firebase Admin read access. Ten configured-backend HTTP rejection/health checks
+pass; legitimate end-user authentication and session/IDOR tests remain unexecuted.
 The dated sections below are historical.
 
 ## Latest security status — 20 September 2026
