@@ -3,8 +3,9 @@ import { trpc } from "@/lib/trpc";
 import { subscribeAuth } from "@/lib/_core/auth";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { isAppRole, type AppRole } from "@/lib/role-routing";
 
-export type UserRole = "family" | "driver" | "admin";
+export type UserRole = AppRole;
 export type DriverAccountStatus = "active" | "frozen" | "suspended" | "pending";
 type SubscriptionStatus = "unpaid" | "pending" | "approved" | "rejected";
 const FONT_SCALE_KEY = "wasalny.fontScale";
@@ -29,7 +30,9 @@ export function WasalnyStateProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   useEffect(() => subscribeAuth(() => { queryClient.clear(); }), [queryClient]);
   const me = trpc.auth.me.useQuery(undefined, { retry: false, refetchInterval: 15_000 });
-  const currentUser = me.data ? { role: me.data.appRole as UserRole, name: me.data.name ?? "" } : null;
+  const currentUser = me.data && isAppRole(me.data.appRole)
+    ? { role: me.data.appRole, name: me.data.name ?? "" }
+    : null;
   const onboarding = trpc.profile.onboarding.useQuery(undefined, { enabled: me.data?.appRole === "driver", retry: false, refetchInterval: 15_000 });
   const subscriptionStatus: SubscriptionStatus = onboarding.data?.profile?.subscriptionStatus ?? "unpaid";
   const driverOnline = onboarding.data?.profile?.isOnline ?? false;

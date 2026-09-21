@@ -5,6 +5,26 @@ mock-based tests are not evidence of real Firebase authentication or device read
 
 ## Executed evidence
 
+### Role-specific application routing — 21 September 2026
+
+- The authenticated tab shell now accepts only the backend-authoritative
+  `family`, `driver`, or `admin` role and fails closed for unknown values.
+- Family accounts expose only Family Home and ride history. Driver and Admin
+  accounts expose only their respective application. Direct navigation to a
+  different role's tab redirects to the caller's authorized home.
+- Unauthenticated tab access returns to login; loading and invalid-role states
+  are explicit rather than rendering a mixed-role shell.
+- Eight focused client-routing regressions passed alongside 87 existing direct
+  API authorization/router checks. The complete offline suite is now **301
+  passed, 0 failed, 3 skipped**; TypeScript, lint (one existing warning), and
+  backend build passed.
+- The managed preview was restarted, health returned HTTP 200, and the rebuilt
+  mobile viewport rendered the login boundary. This is source/test/web-preview
+  evidence, not a real Driver/Admin browser acceptance claim.
+- Phone SMS regions were restricted to Egypt and Saudi Arabia, but genuine
+  Phone authentication remains intentionally deferred because Firebase requires
+  a linked billing account. Google sign-in remains the active staging path.
+
 ### Real Google sign-in and session issuance — 21 September 2026
 
 - The human tester completed Google sign-in and initially received the actual
