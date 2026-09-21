@@ -1,5 +1,6 @@
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { apiUrl, resolveApiBaseUrl } from "./api-url";
 
 export type User = {
   id: number;
@@ -25,18 +26,13 @@ export function subscribeAuth(listener: (user: User | null) => void) {
 }
 function emit() { listeners.forEach(listener => listener(session?.user ?? null)); }
 export function authBaseUrl() {
-  const url = process.env.EXPO_PUBLIC_API_BASE_URL;
-  if (!url) throw new Error("Missing EXPO_PUBLIC_API_BASE_URL; configure the staging API URL.");
-  if (!/^https:\/\//.test(url) && !/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/?$/.test(url)) {
-    throw new Error("EXPO_PUBLIC_API_BASE_URL must use HTTPS (except local development).");
-  }
-  return url.replace(/\/$/, "");
+  return resolveApiBaseUrl();
 }
 export class AuthApiError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 export async function authRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const response = await fetch(`${authBaseUrl()}${path}`, { ...options, credentials: "omit",
+  const response = await fetch(apiUrl(path), { ...options, credentials: "omit",
     headers: { "Content-Type": "application/json", ...options.headers } });
   const body = await response.json().catch(() => null);
   if (!response.ok) throw new AuthApiError(typeof body?.error === "string" ? body.error : `Request failed (${response.status})`, response.status);

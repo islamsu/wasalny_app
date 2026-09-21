@@ -5,6 +5,22 @@ mock-based tests are not evidence of real Firebase authentication or device read
 
 ## Executed evidence
 
+### Existing app workspace launch — 21 September 2026
+
+- The existing Expo app now runs as **Wasalny — Live App** at the workspace root.
+  The design canvas and starter API remain unchanged; no replacement UI or demo
+  identity/data was added. See [launch details](workspace-preview.md).
+- Home and login routes returned HTTP 200 and were visually checked at mobile
+  and desktop viewport sizes. The real backend health endpoint returned 200.
+- Private-file requests and unknown backend routes returned 404; disabled
+  legacy OAuth returned 410. Protected requests still return `HTTPS_REQUIRED`
+  until trusted ingress is verified, rather than bypassing transport protection.
+- Complete suite after integration: **267 passed, 0 failed, 3 skipped**.
+  **2/2** additional launcher configuration-isolation checks passed. TypeScript,
+  backend build, and Expo web export passed; lint retains one existing warning.
+- This is visual launch evidence, not real end-user authentication, successful
+  ride booking, production publication, or Android/device evidence.
+
 ### Live provider configuration checkpoint — 21 September 2026
 
 - Replacement service-account project matches `wasalny-staging`; private-key
@@ -134,7 +150,8 @@ Keep the verified server credentials and explicit verified-TLS MySQL connection
 unchanged. Never place service-account JSON, session-signing keys, provider ID
 tokens, or refresh tokens in chat, attachments, logs, client bundles or Git.
 
-Prepare/verify the staging browser/API origin and matching client configuration,
+The real workspace browser/API preview is now running. Verify its trusted HTTPS
+ingress and Firebase authorized domain (without weakening transport checks),
 then have authorized testers complete genuine Google/Phone sign-in. Do not ask
 for their Google passwords or SMS codes in chat. Continue session rotation/replay,
 logout/current-role checks and two-user ownership tests from those real sessions.

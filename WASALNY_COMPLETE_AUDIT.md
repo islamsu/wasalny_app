@@ -10,6 +10,10 @@ configuration are verified, but no genuine end-user sign-in, authenticated ride
 flow, or device verification is claimed. The dated sections below are retained
 as historical evidence.
 
+The existing application now renders in the workspace, with its own namespaced
+backend and 267 passing offline tests plus two launcher isolation checks.
+Visual launch does not waive the remaining HTTPS/provider/admin gates.
+
 ## Latest audit status — 20 September 2026
 
 **Decision: NO-GO — 48/100.** The latest evidence establishes the empty staging database, TLS connection, and migration/schema baseline only. It does not justify a score increase because no real application workflow was executed. All earlier sections remain as historical evidence.

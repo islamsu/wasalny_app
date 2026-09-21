@@ -3,6 +3,7 @@ import { httpBatchLink } from "@trpc/client";
 import superjson from "superjson";
 import type { AppRouter } from "@/server/routers";
 import * as Auth from "@/lib/_core/auth";
+import { apiUrl } from "@/lib/_core/api-url";
 
 /**
  * tRPC React client for type-safe API calls.
@@ -21,11 +22,10 @@ export function createTRPCClient() {
   return trpc.createClient({
     links: [
       httpBatchLink({
-        url: `${(process.env.EXPO_PUBLIC_API_BASE_URL ?? "").replace(/\/$/, "")}/api/trpc`,
+        url: apiUrl("/api/trpc"),
         // tRPC v11: transformer MUST be inside httpBatchLink, not at root
         transformer: superjson,
         async headers() {
-          Auth.authBaseUrl(); // Fail explicitly on a request, without crashing the login screen.
           const token = await Auth.getSessionToken();
           return token ? { Authorization: `Bearer ${token}` } : {};
         },

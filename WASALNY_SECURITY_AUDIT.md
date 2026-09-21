@@ -9,6 +9,9 @@ writes remain fail-closed. Mocked auth tests are not real Firebase or device evi
 The replacement staging credential now passes project/key validation and real
 Firebase Admin read access. Ten configured-backend HTTP rejection/health checks
 pass; legitimate end-user authentication and session/IDOR tests remain unexecuted.
+Workspace visual launch preserves that boundary: no demo principals or transport
+bypass were added, and client exports exclude server credentials. Protected
+preview requests remain fail-closed pending verified HTTPS forwarding.
 The dated sections below are historical.
 
 ## Latest security status — 20 September 2026

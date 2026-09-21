@@ -7,6 +7,8 @@ node_modules/
 .expo/
 dist/
 web-build/
+.workspace-web/
+.workspace-web-next/
 expo-env.d.ts
 
 # Native

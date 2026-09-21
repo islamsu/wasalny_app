@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 
 const envPath = path.resolve(process.cwd(), ".env");
 
-if (fs.existsSync(envPath)) {
+if (process.env.EXPO_NO_DOTENV !== "1" && fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, "utf8");
   const lines = envContent.split("\n");
 
