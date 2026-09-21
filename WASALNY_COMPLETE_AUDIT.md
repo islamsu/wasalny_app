@@ -11,8 +11,10 @@ flow, or device verification is claimed. The dated sections below are retained
 as historical evidence.
 
 The existing application now renders in the workspace, with its own namespaced
-backend and 267 passing offline tests plus two launcher isolation checks.
-Visual launch does not waive the remaining HTTPS/provider/admin gates.
+backend and 293 passing offline tests plus two launcher isolation checks.
+Staging ingress and Firebase domain configuration are verified; provider
+preflight reached Google's account-entry screen, not an authenticated session.
+Human authentication and controlled administrator approval remain gates.
 
 ## Latest audit status — 20 September 2026
 

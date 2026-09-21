@@ -5,6 +5,7 @@ import { existsSync } from "fs";
 import path from "path";
 import { pathToFileURL } from "url";
 import { createWasalnyApp } from "./app";
+import { createStagingIngressMiddleware } from "./staging-ingress";
 
 const DEFAULT_EXPORT_DIRECTORY = path.resolve(process.cwd(), ".workspace-web");
 const BLOCKED_STATIC_SUFFIXES = [
@@ -41,7 +42,8 @@ export interface WorkspacePreviewOptions {
 export function createWorkspacePreviewApp(options: WorkspacePreviewOptions = {}): Express {
   const exportDirectory = path.resolve(options.exportDirectory ?? DEFAULT_EXPORT_DIRECTORY);
   const app = express();
-
+  const stagingIngress = createStagingIngressMiddleware();
+  if (stagingIngress) app.use("/wasalny-api", stagingIngress);
   app.use("/wasalny-api", createWasalnyApp());
   app.use("/wasalny-api", (_req, res) => {
     res.status(404).json({ error: "API_ENDPOINT_NOT_FOUND" });

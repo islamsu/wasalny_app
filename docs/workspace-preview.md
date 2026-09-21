@@ -44,13 +44,26 @@ This is a **visual workspace preview**, not proof of production readiness or a
 successful login. No fixture users, rides, role promotions, registration flags,
 HTTP auth allowances, or trusted-proxy hop counts were introduced.
 
-The current preview's protected requests return `HTTPS_REQUIRED`: the external
-HTTPS connection terminates before Express, and the trusted forwarding policy
-has not yet been established. Firebase's authorized-domain list also does not
-yet include this workspace origin. Resolve these explicitly before real login;
-do not disable HTTPS enforcement or trust arbitrary forwarding headers just to
-remove the error. Successful browser login, session refresh/logout, and real
-authenticated ride/IDOR checks are still unexecuted.
+The verified workspace origin is now authorized in Firebase. The opt-in
+`WASALNY_STAGING_INGRESS_ORIGIN` must exactly match `https://REPLIT_DEV_DOMAIN`.
+Only the API namespace accepts its measured proxy contract: loopback socket
+peer, exact Host, and one exact HTTPS forwarding value. Express proxy trust
+stays disabled. Unsupported forwarding headers, including forwarded port,
+are rejected. See [the ingress evidence and boundaries](staging-ingress.md).
+
+Protected anonymous requests now return `401 BEARER_REQUIRED`, not
+`HTTPS_REQUIRED`. A fresh browser reached Google's genuine account-entry screen
+without a Firebase unauthorized-domain error. This is provider preflight, not
+successful authentication. A human must complete Google sign-in or phone
+possession verification directly in the application, never in chat.
+
+Global registration remains closed. After a real human-controlled tester is
+identified and approved, `WASALNY_AUTH_NEW_USER_UID_ALLOWLIST` can permit only
+that verified Firebase UID to enroll as a normal family user. The allowlist is
+currently unset. An initial legitimate sign-in may therefore report
+`REGISTRATION_CLOSED`; this does not authorize bypassing enrollment or creating
+privileged users. Session refresh/logout and authenticated ride/IDOR checks
+remain unexecuted until genuine identities and the required role approvals exist.
 
 The application can now be visually inspected without claiming those security
 gates passed. Android signing and physical-device checks remain deferred.

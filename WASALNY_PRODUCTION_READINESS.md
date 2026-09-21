@@ -4,13 +4,15 @@
 
 **NO-GO — 48/100 remains unchanged.** See
 [current executed evidence](docs/continuous-readiness-evidence.md) for the
-Firebase/session implementation, 267 passing offline tests, separate passing
+Firebase/session implementation, 293 passing offline tests, separate passing
 business-only MySQL concurrency harness, and migration 0011 verification.
 The existing app is now launchable for workspace visual inspection; see
 [workspace preview](docs/workspace-preview.md) for its remaining authentication gates.
 Firebase Admin read access and Google/Phone provider configuration are now
 verified. No provider users exist; real Firebase/HTTP identity E2E still requires
-human-controlled Google/Phone sign-in and verified browser ingress. Android signing
+human-controlled Google/Phone sign-in. Staging ingress and the exact Firebase
+domain are verified; browser preflight reached Google account entry, not a
+successful authenticated session. Android signing
 and real-device authentication are **DEFERRED — DEVICE/SIGNING VERIFICATION**.
 The dated sections below are historical, not the current implementation inventory.
 

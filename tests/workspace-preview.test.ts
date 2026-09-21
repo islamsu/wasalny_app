@@ -76,6 +76,10 @@ describe("workspace preview", () => {
       expect(response.status, pathname).toBe(404);
       expect(await response.text(), pathname).not.toContain("Home export");
     }
+
+    const removedProbe = await fetch(`${baseUrl}/__wasalny_ingress_probe_20260921`);
+    expect(removedProbe.status).toBe(404);
+    expect(await removedProbe.text()).not.toContain("forwardedForCount");
   });
 
   it("uses only the configured origin allowlist and requires a strict PORT", async () => {

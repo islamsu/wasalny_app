@@ -22,16 +22,21 @@ administrator.
   at least 32 bytes. Never reuse a Firebase private key or legacy session secret.
 - Existing `WASALNY_DATABASE_URL` and verified-TLS CA configuration: staging
   MySQL only. Never the generic runtime database variable.
-- `WASALNY_ALLOWED_ORIGINS`: exact approved browser origins;
-  `WASALNY_TRUST_PROXY_HOPS`: explicit ingress topology only after confirming
-  ingress strips untrusted forwarding headers. HTTPS remains mandatory.
+- `WASALNY_ALLOWED_ORIGINS`: exact approved browser origins.
+  `WASALNY_STAGING_INGRESS_ORIGIN` opts into the verified workspace-only policy
+  described in [staging ingress](staging-ingress.md). Numeric
+  `WASALNY_TRUST_PROXY_HOPS` is no longer supported. HTTPS remains mandatory.
 - `WASALNY_AUTH_ALLOW_NEW_USERS`: closed unless explicitly `true`. Prelink
   existing accounts before opening registration, avoiding duplicate accounts.
+- `WASALNY_AUTH_NEW_USER_UID_ALLOWLIST`: optional bounded list of explicitly
+  approved real tester UIDs. Only verified matching identities can enroll as
+  ordinary family users; no role elevation. Empty/unset remains closed.
 
 Restart the controlled deployment after credential rotation; the Firebase Admin
 app caches its initialized credential. No actual values are provided here.
 Deploy a shared edge rate limiter before horizontal scaling; the application's
-30-auth-requests/minute/IP limiter is per process.
+30-auth-requests/minute/socket-peer limiter is per process and aggregates users
+behind the staging proxy; it is not a production per-client limiter.
 
 Authentication failures and infrastructure failures are distinct. Invalid,
 expired or revoked credentials return unauthorized; blocked users are forbidden.

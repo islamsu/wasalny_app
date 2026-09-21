@@ -4,6 +4,10 @@ import { registerAuthRoutes, authTransport } from "../auth/routes";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { registerStorageProxy } from "./storageProxy";
+import {
+  getConfiguredStagingOrigin,
+  rejectLegacyTrustProxyConfiguration,
+} from "./staging-ingress";
 
 /**
  * Builds the Wasalny HTTP application without opening a socket.
@@ -12,16 +16,18 @@ import { registerStorageProxy } from "./storageProxy";
  * auth's bounded parser must remain ahead of the larger document parser.
  */
 export function createWasalnyApp(): Express {
+  rejectLegacyTrustProxyConfiguration();
   const app = express();
-
-  // Opt-in only when ingress strips client-supplied forwarded headers.
-  const proxyHops = Number(process.env.WASALNY_TRUST_PROXY_HOPS ?? 0);
-  if (Number.isInteger(proxyHops) && proxyHops > 0 && proxyHops <= 3) app.set("trust proxy", proxyHops);
+  // Forwarding headers are never globally trusted. Staging transport is
+  // verified only by the workspace wrapper's scoped ingress middleware.
+  app.set("trust proxy", false);
 
   // Exact allowlist, never reflected credentials or wildcard origins.
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     const allowed = (process.env.WASALNY_ALLOWED_ORIGINS ?? "").split(",").map(x => x.trim());
+    const stagingOrigin = getConfiguredStagingOrigin();
+    if (stagingOrigin) allowed.push(stagingOrigin);
     if (origin && !allowed.includes(origin)) { res.status(403).json({ error: "ORIGIN_REJECTED" }); return; }
     if (origin) {
       res.header("Access-Control-Allow-Origin", origin);

@@ -31,7 +31,7 @@ async function insertRefresh(c: PoolConnection, sid: string, token: string, expi
   return write(c, "INSERT INTO authRefreshTokens (sessionId,tokenHash,expiresAt) VALUES (?,?,?)", [Buffer.from(sid), hashRefresh(token), expires]);
 }
 export async function exchange(idToken: string) {
-  authConfig();
+  const config = authConfig();
   const identity = await verifyFirebase(idToken);
   // Unique issuer/subject plus transaction prevents partial or duplicate provisioning.
   // A duplicate-key/deadlock loser fails explicitly and can exchange again.
@@ -39,7 +39,9 @@ export async function exchange(idToken: string) {
     let [mapping] = await rows(c, "SELECT * FROM authIdentities WHERE issuer=? AND subject=? FOR UPDATE", [Buffer.from(identity.issuer), Buffer.from(identity.subject)]);
     if (!mapping) {
       // Operators prelink legacy accounts before opening self-registration.
-      if (process.env.WASALNY_AUTH_ALLOW_NEW_USERS !== "true") throw new AuthError("IDENTITY_PRELINK_REQUIRED", 403);
+      if (!config.allowNewUsers && !config.newUserUidAllowlist.has(identity.subject)) {
+        throw new AuthError("IDENTITY_PRELINK_REQUIRED", 403);
+      }
       const created = await write(c, "INSERT INTO users (openId,name,email,loginMethod,role,appRole,userStatus) VALUES (?,?,?,'firebase','user','family','active')",
         [`firebase_${opaque()}`, identity.name, identity.email]);
       const linked = await write(c, "INSERT INTO authIdentities (userId,issuer,subject,lastAuthenticatedAt) VALUES (?,?,?,?)",

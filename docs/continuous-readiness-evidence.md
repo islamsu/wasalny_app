@@ -5,6 +5,25 @@ mock-based tests are not evidence of real Firebase authentication or device read
 
 ## Executed evidence
 
+### Secure staging ingress and provider preflight — 21 September 2026
+
+- Exact-origin, loopback-peer staging verification now permits genuine forwarded
+  HTTPS without enabling Express proxy trust. Unsupported/duplicate forwarding
+  headers fail closed; spoofed client IPs do not change limiter identity.
+- Sixteen ingress regressions and nine live HTTP checks passed. The complete
+  suite is now **293 passed, 0 failed, 3 skipped**, plus two launcher checks;
+  TypeScript/backend build passed.
+- The exact runtime workspace hostname was added to Firebase authorized domains
+  through the configured service account and verified by rereading configuration.
+  Existing domains were preserved; no Console action was necessary.
+- A fresh browser rendered the unchanged login screen and reached Google's
+  genuine account-entry popup without unauthorized-domain/HTTPS errors.
+- Provider inventory remains **0 users**. No real end-user authentication,
+  session exchange, refresh/logout, IDOR, or authenticated ride success is claimed.
+- Enrollment remains closed. A bounded optional verified-UID allowlist was added
+  for ordinary family testers, but no UID was configured and no user was created.
+- [Ingress evidence and explicit trust boundaries](staging-ingress.md).
+
 ### Existing app workspace launch — 21 September 2026
 
 - The existing Expo app now runs as **Wasalny — Live App** at the workspace root.
@@ -122,8 +141,9 @@ server ride state rather than simulated progression.
 - No real staging provider users currently exist. Legitimate Google/Phone
   sign-in by human-controlled test identities is required before live
   application sessions, refresh/logout, or authenticated IDOR can be exercised.
-- Actual staging HTTPS origin, API URL and trusted-proxy topology must be verified
-  before browser/provider acceptance testing. No guessed origin/hop count is safe.
+- The current workspace's exact HTTPS origin and constrained ingress are verified.
+  Revalidate for a changed hostname/topology or production ingress; no general
+  forwarding trust or production readiness follows from staging evidence.
 - Real Firebase login, wrong-project/revoked/disabled-user exercises, MySQL session
   refresh concurrency, authenticated API ride E2E and cross-account IDOR remain
   **NOT EXECUTED**.
@@ -150,9 +170,10 @@ Keep the verified server credentials and explicit verified-TLS MySQL connection
 unchanged. Never place service-account JSON, session-signing keys, provider ID
 tokens, or refresh tokens in chat, attachments, logs, client bundles or Git.
 
-The real workspace browser/API preview is now running. Verify its trusted HTTPS
-ingress and Firebase authorized domain (without weakening transport checks),
-then have authorized testers complete genuine Google/Phone sign-in. Do not ask
+The real workspace browser/API preview now has verified staging HTTPS ingress
+and the exact Firebase authorized domain. Have authorized testers complete
+genuine Google/Phone sign-in, then narrowly approve their verified tester UID
+for ordinary-family enrollment rather than opening global registration. Do not ask
 for their Google passwords or SMS codes in chat. Continue session rotation/replay,
 logout/current-role checks and two-user ownership tests from those real sessions.
 The full driver ride flow additionally needs the documented controlled

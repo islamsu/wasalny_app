@@ -2,16 +2,24 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import { AuthError } from "./config";
 import { sanitizedAuthError } from "./errors";
 import { authenticate, exchange, logout, publicUser, refresh } from "./service";
+import {
+  getConfiguredStagingOrigin,
+  isVerifiedStagingTransport,
+} from "../_core/staging-ingress";
 
 // Bearer/JSON only: no ambient cookie authentication and no cookies issued.
-// Trust forwarding headers only behind explicitly configured trusted proxy hops.
+// HTTPS may be native TLS or the private marker set by verified staging ingress.
 export function authTransport(req: Request, res: Response, next: NextFunction) {
   res.setHeader("Cache-Control", "no-store");
   const local = process.env.NODE_ENV !== "production" &&
     process.env.WASALNY_ALLOW_HTTP_LOCAL === "true" &&
     ["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(req.socket.remoteAddress ?? "");
-  if (!req.secure && !local) { res.status(400).json({ error: "HTTPS_REQUIRED" }); return; }
+  if (!req.secure && !isVerifiedStagingTransport(req) && !local) {
+    res.status(400).json({ error: "HTTPS_REQUIRED" }); return;
+  }
   const origins = (process.env.WASALNY_ALLOWED_ORIGINS ?? "").split(",").map(x => x.trim()).filter(Boolean);
+  const stagingOrigin = getConfiguredStagingOrigin();
+  if (stagingOrigin) origins.push(stagingOrigin);
   if (req.headers.origin && !origins.includes(req.headers.origin)) {
     res.status(403).json({ error: "ORIGIN_REJECTED" }); return;
   }
@@ -22,10 +30,11 @@ export function authTransport(req: Request, res: Response, next: NextFunction) {
   }
   next();
 }
-// Per-process staging limiter; deploy a shared edge limiter before horizontal scaling.
+// Per-process limiter keyed only by the socket peer. In staging this deliberately
+// aggregates the wrapper peer until a reliable per-client topology is established.
 const buckets = new Map<string, { count: number; until: number }>();
 export function authRateLimit(req: Request, res: Response, next: NextFunction) {
-  const now = Date.now(), key = req.ip ?? req.socket.remoteAddress ?? "unknown";
+  const now = Date.now(), key = req.socket.remoteAddress ?? "unknown";
   for (const [k, v] of buckets) if (v.until <= now) buckets.delete(k);
   if (!buckets.has(key) && buckets.size >= 10000) { res.status(429).json({ error: "AUTH_RATE_LIMIT" }); return; }
   const bucket = buckets.get(key) ?? { count: 0, until: now + 60000 };
