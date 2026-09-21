@@ -80,8 +80,9 @@ server ride state rather than simulated progression.
   multi-replica use. Notification delivery is not an exactly-once transactional
   outbox. These remain production limitations.
 - CI definition is non-secret, Node 22/pnpm 9.12, with no database migrations or
-  deployment step. A remote workflow result must be reported separately from
-  local validation.
+  deployment step. It is prepared locally but NOT pushed: GitHub's connection
+  lacks workflow permission and reauthorization does not offer that scope.
+  Repository-owner action is needed to add the workflow. Remote CI is NOT RUN.
 
 ## Safe continuation
 
