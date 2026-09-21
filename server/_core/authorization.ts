@@ -1,9 +1,10 @@
 import { TRPCError } from "@trpc/server";
+import { documentIsCurrent, validInterval } from "../../shared/business-policy";
 
 export type AppRole = "family" | "driver" | "admin";
 type Principal = { id: number; appRole?: string | null; userStatus?: string | null };
-type Driver = { verificationStatus?: string | null; accountStatus?: string | null; subscriptionStatus?: string | null };
-type Document = { documentType: string; status: string; id?: number };
+type Driver = { verificationStatus?: string | null; accountStatus?: string | null; subscriptionStatus?: string | null; subscriptionStartsAt?: Date | null; subscriptionEndsAt?: Date | null };
+type Document = { documentType: string; status: string; id?: number; validFrom?: Date | null; expiresAt?: Date | null };
 
 // Explicit fail-closed policy: even expired temporary suspensions need an
 // audited reactivation. A timestamp never silently restores authorization.
@@ -36,14 +37,13 @@ export function assertOperationalDriver(user: Principal | null | undefined, driv
   if (!driver || driver.verificationStatus !== "approved" || driver.accountStatus !== "active" || (subscriptionRequired && driver.subscriptionStatus !== "approved")) {
     throw new TRPCError({ code: "FORBIDDEN", message: "Driver is not operationally eligible" });
   }
-  // Latest submission wins: uploading a replacement requires a new review.
-  // Payment is the subscription receipt, not a substitute for subscriptionStatus.
-  // The current schema has no billing/document validity-date model; expiry rules
-  // remain deferred rather than inferring validity dates from upload timestamps.
+  if (subscriptionRequired && !validInterval(driver.subscriptionStartsAt, driver.subscriptionEndsAt)) {
+    throw new TRPCError({ code: "FORBIDDEN", message: "A current explicit subscription interval is required" });
+  }
   for (const type of REQUIRED_DRIVER_DOCUMENTS) {
     if (type === "payment" && !subscriptionRequired) continue;
     const latest = documents.filter((doc) => doc.documentType === type).sort((a, b) => (b.id ?? 0) - (a.id ?? 0))[0];
-    if (latest?.status !== "approved") throw new TRPCError({ code: "FORBIDDEN", message: `Approved driver document required: ${type}` });
+    if (latest?.status !== "approved" || !documentIsCurrent(latest)) throw new TRPCError({ code: "FORBIDDEN", message: `Current approved driver document required: ${type}` });
   }
 }
 
@@ -67,7 +67,7 @@ export function authorizeProcedure(user: Principal | null | undefined, path: str
     if (type === "mutation") assertSensitiveAdmin(user);
     return;
   }
-  if (["driverDocuments.listMine", "driverDocuments.upload", "profile.ensureDriver"].includes(path)) {
+  if (["driverDocuments.listMine", "driverDocuments.upload", "profile.ensureDriver", "profile.onboarding", "profile.submitOnboarding"].includes(path)) {
     assertDriverOnboarding(user);
     return;
   }
@@ -85,6 +85,6 @@ export function authorizeProcedure(user: Principal | null | undefined, path: str
     if (user.appRole === "driver") return "driver-operation";
     return;
   }
-  if (["ratings.forDriver", "push.register"].includes(path)) return;
+  if (["rides.detail", "rides.current", "ratings.forDriver", "push.register"].includes(path)) return;
   throw new TRPCError({ code: "FORBIDDEN", message: "No authorization policy for procedure" });
 }

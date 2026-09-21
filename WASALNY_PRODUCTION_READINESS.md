@@ -1,5 +1,15 @@
 # Wasalny Production Readiness
 
+## Current continuous-execution checkpoint
+
+**NO-GO — 48/100 remains unchanged.** See
+[current executed evidence](docs/continuous-readiness-evidence.md) for the
+Firebase/session implementation, 247 passing offline tests, separate passing
+business-only MySQL concurrency harness, and migration 0011 verification.
+Real Firebase/HTTP identity E2E remains blocked on configuration. Android signing
+and real-device authentication are **DEFERRED — DEVICE/SIGNING VERIFICATION**.
+The dated sections below are historical, not the current implementation inventory.
+
 ## Current verdict — 20 September 2026
 
 **NO-GO — 48 / 100.** The score is retained from Phase 3 without an unexplained increase. New evidence verifies only the dedicated staging database, TLS, migrations, and empty live schema; it does not prove an operational transportation workflow. Production was not touched.

@@ -95,10 +95,10 @@ export default function RootLayout() {
   if (!fontsLoaded && !fontError) return null;
 
   const content = (
-    <WasalnyStateProvider>
       <GestureHandlerRootView style={{ flex: 1, direction: "rtl" }}>
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
+          <WasalnyStateProvider>
           {/* Default to hiding native headers so raw route segments don't appear (e.g. "(tabs)", "products/[id]"). */}
           {/* If a screen needs the native header, explicitly enable it and set a human title via Stack.Screen options. */}
           {/* in order for ios apps tab switching to work properly, use presentation: "fullScreenModal" for login page, whenever you decide to use presentation: "modal*/}
@@ -109,10 +109,10 @@ export default function RootLayout() {
             <Stack.Screen name="oauth/callback" />
           </Stack>
           <StatusBar style="auto" />
+          </WasalnyStateProvider>
         </QueryClientProvider>
       </trpc.Provider>
       </GestureHandlerRootView>
-    </WasalnyStateProvider>
   );
 
   const shouldOverrideSafeArea = Platform.OS === "web";

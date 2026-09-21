@@ -11,6 +11,7 @@ vi.mock("../server/_core/mysql-config", () => ({ mysqlConnectionOptions: () => (
 vi.mock("../server/storage", () => ({ storagePut: state.storagePut }));
 vi.mock("drizzle-orm/mysql2", () => ({
   drizzle: () => ({
+    transaction<T>(work: (tx: unknown) => Promise<T>) { return work(this); },
     select: () => {
       const rows = state.rows.shift() ?? [];
       const result = Promise.resolve(rows);
@@ -30,7 +31,7 @@ vi.mock("drizzle-orm/mysql2", () => ({
   }),
 }));
 
-beforeEach(() => { vi.clearAllMocks(); state.rows = []; });
+beforeEach(() => { vi.clearAllMocks(); state.rows = []; state.update.mockReturnValue({ set: () => ({ where: async () => undefined }) }); });
 
 describe("Gate 1 database business authorization (no database connection)", () => {
   it.each(["admin", "driver"] as const)("upsert ignores client %s role and status on insert and duplicate update", async (appRole) => {
@@ -67,29 +68,31 @@ describe("Gate 1 database business authorization (no database connection)", () =
   });
   it.each(["family", "driver"])("legitimate %s upload ensures a pending profile and pending document without granting a role", async (appRole) => {
     const actor = { id: 7, appRole, userStatus: "active" };
-    state.rows = [[actor], [actor], [{ userId: 7, verificationStatus: "pending" }], [{ userId: 7, documentType: "payment", status: "pending" }]];
+    state.rows = [[actor], [actor], [{ userId: 7, verificationStatus: "pending" }], [actor], [{ userId: 7 }], [{ userId: 7, documentType: "payment", status: "pending" }]];
     state.storagePut.mockResolvedValue({ key: "drivers/7/payment/unit/file.pdf", url: "/unit" });
     await expect(createDriverDocument({ userId: 7, documentType: "payment", fileName: "file.pdf", mimeType: "application/pdf", dataBase64: "dGVzdA==" })).resolves.toMatchObject({ status: "pending" });
     expect(state.insertValues).toHaveBeenNthCalledWith(1, { userId: 7, vehicleType: "car", verificationStatus: "pending", verifiedAt: null, verifiedBy: null });
     expect(state.insertValues).toHaveBeenNthCalledWith(2, expect.objectContaining({ documentType: "payment", status: "pending", reviewedBy: null }));
     expect(state.duplicateUpdate).toHaveBeenCalledWith({ set: { userId: 7 } });
-    expect(state.update).not.toHaveBeenCalled();
+    expect(state.update).toHaveBeenCalledTimes(1);
   });
   it("spoofed actorRole admin cannot complete family's own ride", async () => {
-    state.rows = [[{ id: 7, appRole: "family", role: "admin", userStatus: "active" }], [{ id: 1, familyUserId: 7, driverUserId: 9, status: "active" }]];
-    await expect(updateRideStatus({ id: 1, status: "completed", actorUserId: 7, actorRole: "admin" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const actor = { id: 7, appRole: "family", role: "admin", userStatus: "active" };
+    state.rows = [[actor], [actor], [{ id: 1, familyUserId: 7, driverUserId: 9, status: "active" }]];
+    await expect(updateRideStatus({ id: 1, status: "completed", actorUserId: 7, actorRole: "admin", idempotencyKey: "test-key-001" } as never)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(state.update).not.toHaveBeenCalled();
   });
   it("spoofed role cannot cancel another family's ride", async () => {
-    state.rows = [[{ id: 7, appRole: "family", userStatus: "active" }], [{ id: 1, familyUserId: 8, status: "requested" }]];
-    await expect(updateRideStatus({ id: 1, status: "cancelled", actorUserId: 7, actorRole: "admin" })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const actor = { id: 7, appRole: "family", userStatus: "active" };
+    state.rows = [[actor], [actor], [{ id: 1, familyUserId: 8, status: "requested" }]];
+    await expect(updateRideStatus({ id: 1, status: "cancelled", actorUserId: 7, actorRole: "admin", idempotencyKey: "test-key-002" } as never)).rejects.toMatchObject({ code: "FORBIDDEN" });
     expect(state.update).not.toHaveBeenCalled();
   });
   it("db helper reloads approved driver and required documents", async () => {
     state.rows = [
       [{ id: 7, appRole: "driver", userStatus: "active" }],
-      [{ verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved" }],
-      REQUIRED_DRIVER_DOCUMENTS.map((documentType) => ({ documentType, status: "approved" })),
+      [{ verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved", subscriptionStartsAt: new Date("2020-01-01"), subscriptionEndsAt: new Date("2099-01-01") }],
+      REQUIRED_DRIVER_DOCUMENTS.map((documentType) => ({ documentType, status: "approved", expiresAt: new Date("2099-01-01") })),
     ];
     await expect(assertDriverEligibility(7)).resolves.toBeUndefined();
     expect(state.rows).toHaveLength(0);

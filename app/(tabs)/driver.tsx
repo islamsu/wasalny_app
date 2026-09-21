@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Location from "expo-location";
 import { Alert, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { trpc } from "@/lib/trpc";
+import { pendingOperation } from "@/lib/pending-operation";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -33,12 +34,31 @@ const documents = [
 
 export default function DriverScreen() {
   const colors = useColors();
-  const { subscriptionStatus, driverOnline, fontScale, toggleDriverOnline } = useWasalnyState();
+  const { fontScale } = useWasalnyState();
+  const me = trpc.auth.me.useQuery();
+  const onboarding = trpc.profile.onboarding.useQuery(undefined, { enabled: me.data?.appRole === "driver", retry: false, refetchInterval: 10_000 });
+  const documentsQuery = trpc.driverDocuments.listMine.useQuery(undefined, { enabled: me.data?.appRole === "driver", retry: false });
+  const ensure = trpc.profile.ensureDriver.useMutation();
+  const submit = trpc.profile.submitOnboarding.useMutation();
+  const currentRides = trpc.rides.current.useQuery(undefined, { enabled: me.data?.appRole === "driver", retry: false, refetchInterval: 5000 });
+  const currentRide = { ...currentRides, data: currentRides.data?.[0] };
+  const statusMutation = trpc.rides.status.useMutation();
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [vehicleNumber, setVehicleNumber] = useState("");
+  const [expiry, setExpiry] = useState<Record<string, string>>({});
+  const profile = onboarding.data?.profile;
+  const subscriptionStatus = profile?.subscriptionStatus ?? "unpaid";
+  const driverOnline = profile?.isOnline ?? false;
   const [vehicle, setVehicle] = useState<VehicleChoice | null>(null);
-  const [uploadedFiles, setUploadedFiles] = useState<Record<string, { name: string; uri: string; mimeType?: string }>>({});
-  const [submitted, setSubmitted] = useState(false);
+  const latestDocuments = [...(documentsQuery.data ?? [])].sort((a, b) => b.id - a.id).filter((d, index, all) => all.findIndex((item) => item.documentType === d.documentType) === index);
+  const uploadedFiles = Object.fromEntries(latestDocuments.filter((d) => d.status !== "rejected" && (!d.expiresAt || new Date(d.expiresAt).getTime() > Date.now())).map((d) => [d.documentType, { name: d.fileName }]));
+  const submitted = onboarding.data?.submitted ?? false;
   const [offerInputs, setOfferInputs] = useState<Record<number, { price: string; eta: string }>>({});
-  const driverRequestsQuery = trpc.rides.driverRequests.useQuery(undefined, { retry: false, refetchInterval: driverOnline ? 20_000 : false });
+  useEffect(() => {
+    setVehicle(null); setVehicleNumber(""); setExpiry({}); setOfferInputs({}); setError("");
+  }, [me.data?.id]);
+  const driverRequestsQuery = trpc.rides.driverRequests.useQuery(undefined, { enabled: me.data?.appRole === "driver" && driverOnline, retry: false, refetchInterval: driverOnline ? 10_000 : false });
   const offerMutation = trpc.rides.offers.create.useMutation({ onSuccess: () => driverRequestsQuery.refetch() });
   const availabilityMutation = trpc.profile.availability.useMutation();
   const documentUploadMutation = trpc.driverDocuments.upload.useMutation();
@@ -46,7 +66,22 @@ export default function DriverScreen() {
   const complete = uploadedCount === documents.length;
   const statusLabel = useMemo(() => submitted ? "قيد مراجعة الإدارة" : complete ? "جاهز للإرسال" : "ارفع كل المستندات المطلوبة", [submitted, complete]);
 
-  const pickDocument = async (id: (typeof documents)[number][0]) => {
+  const run = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true); setError("");
+    try { await action(); await Promise.all([onboarding.refetch(), documentsQuery.refetch(), currentRide.refetch()]); }
+    catch (e) { setError(e instanceof Error ? e.message : "تعذر الحفظ"); }
+    finally { setBusy(false); }
+  };
+  const pickDocument = (id: (typeof documents)[number][0]) => run(async () => {
+    if (!vehicle && !profile?.vehicleType) throw new Error("اختر نوع المركبة أولاً");
+    let expiresAt: string | undefined;
+    if (["id", "license", "vehicle"].includes(id)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(expiry[id] ?? "")) throw new Error("أدخل تاريخ الانتهاء YYYY-MM-DD");
+      const date = new Date(`${expiry[id]}T23:59:59.000Z`);
+      if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) throw new Error("تاريخ الانتهاء يجب أن يكون في المستقبل");
+      expiresAt = date.toISOString();
+    }
     const result = await DocumentPicker.getDocumentAsync({ type: ["image/*", "application/pdf"], copyToCacheDirectory: true });
     if (result.canceled) return;
     const asset = result.assets[0];
@@ -55,12 +90,24 @@ export default function DriverScreen() {
       Alert.alert("نوع ملف غير مدعوم", "اختر صورة JPG أو PNG أو ملف PDF.");
       return;
     }
-    setUploadedFiles((current) => ({ ...current, [id]: { name: asset.name, uri: asset.uri, mimeType } }));
-    if (Platform.OS !== "web") {
-      const dataBase64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
-      documentUploadMutation.mutate({ documentType: id, fileName: asset.name, mimeType, dataBase64 });
+    if (asset.size && asset.size > 10 * 1024 * 1024) throw new Error("الحد الأقصى 10 ميجابايت");
+    await ensure.mutateAsync({ vehicleType: vehicle ?? profile!.vehicleType });
+    let dataBase64: string;
+    if (Platform.OS === "web") {
+      const response = await fetch(asset.uri);
+      if (!response.ok) throw new Error("تعذر قراءة الملف");
+      const blob = await response.blob();
+      dataBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("تعذر قراءة الملف"));
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.readAsDataURL(blob);
+      });
+    } else {
+      dataBase64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: FileSystem.EncodingType.Base64 });
     }
-  };
+    await documentUploadMutation.mutateAsync({ documentType: id, fileName: asset.name, mimeType, dataBase64, expiresAt });
+  });
 
   return (
     <ScreenContainer className="p-5" safeAreaClassName="bg-background">
@@ -68,19 +115,29 @@ export default function DriverScreen() {
         <Text style={[styles.eyebrow, { color: colors.primary }]}>مساحة السائق</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>خليك سائق في وصلني</Text>
         <Text style={[styles.subtitle, { color: colors.muted }]}>سجّل بياناتك مرة واحدة، وبعد موافقة الإدارة ابدأ تستقبل مشاوير بدون عمولة.</Text>
+        {!!(error || onboarding.error || documentsQuery.error || currentRide.error || availabilityMutation.error || offerMutation.error) && <Text accessibilityRole="alert" style={{ color: colors.error }}>{error || onboarding.error?.message || documentsQuery.error?.message || currentRide.error?.message || availabilityMutation.error?.message || offerMutation.error?.message}</Text>}
+        {busy && <Text style={{ color: colors.muted }}>جاري الحفظ…</Text>}
+        <TextInput value={vehicleNumber} onChangeText={setVehicleNumber} placeholder={profile?.vehicleNumber || "رقم لوحة المركبة"} style={[styles.offerInput, { color: colors.foreground, borderColor: colors.border }]} />
+        {["id", "license", "vehicle"].map((id) => <TextInput key={id} value={expiry[id] ?? ""} onChangeText={(value) => setExpiry((prev) => ({ ...prev, [id]: value }))} placeholder={`انتهاء ${documents.find((d) => d[0] === id)?.[1]} YYYY-MM-DD`} style={[styles.offerInput, { color: colors.foreground, borderColor: colors.border }]} />)}
+        {currentRide.data && <View style={[styles.requestsCard, { borderColor: colors.border }]}>
+          <Text style={{ color: colors.foreground }}>{currentRide.data.bookingCode} · {currentRide.data.status}</Text>
+          <Text style={{ color: colors.foreground }}>{currentRide.data.pickupLabel} ← {currentRide.data.destinationLabel}</Text>
+          {(["arriving", "active", "completed", "cancelled"] as const).filter((status) => status === "cancelled" ? currentRide.data?.status !== "active" : status === "arriving" ? currentRide.data?.status === "accepted" : status === "active" ? ["accepted", "arriving"].includes(currentRide.data!.status) : currentRide.data?.status === "active").map((status) => <Pressable key={status} disabled={busy} onPress={() => void run(() => pendingOperation(me.data!.id, `${status}-${currentRide.data!.id}`, { id: currentRide.data!.id, status }, (input) => statusMutation.mutateAsync(input)))}><Text style={{ color: colors.primary }}>{({ arriving: "في الطريق", active: "بدء الرحلة", completed: "إكمال الرحلة", cancelled: "إلغاء" })[status]}</Text></Pressable>)}
+        </View>}
 
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>نوع المركبة</Text>
         <View style={styles.vehicleRow}>
           {(["toktok", "car"] as VehicleChoice[]).map((item) => {
-            const active = vehicle === item;
+            const active = (vehicle ?? profile?.vehicleType) === item;
             return <Pressable key={item} onPress={() => setVehicle(item)} style={[styles.vehicleCard, { backgroundColor: active ? colors.primary : colors.surface, borderColor: active ? colors.primary : colors.border }]}><Text style={styles.vehicleEmoji}>{item === "toktok" ? "🛺" : "🚗"}</Text><Text style={[styles.vehicleTitle, { color: active ? "#FFFFFF" : colors.foreground }]}>{item === "toktok" ? "توك توك" : "سيارة"}</Text><Text style={[styles.vehicleMeta, { color: active ? "#DDF7E9" : colors.muted }]}>{item === "toktok" ? "٥٠ ج.م شهرياً" : "١٠٠ ج.م شهرياً"}</Text></Pressable>;
           })}
         </View>
 
-        <View style={[styles.otpCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.otpIcon, { backgroundColor: "#E8F5EE" }]}><Text>✓</Text></View><View style={styles.otpCopy}><Text style={[styles.otpTitle, { color: colors.foreground }]}>رقم الهاتف موثق</Text><Text style={[styles.otpText, { color: colors.muted }]}>010 1234 5678 · تم التحقق برسالة OTP</Text></View></View>
+        <Text style={{ color: colors.muted }}>{me.data?.phone ?? "سجل الدخول برقم هاتفك لإكمال التسجيل"}</Text>
 
         <View style={styles.sectionHeader}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>مستندات التحقق</Text><Text style={[styles.progress, { color: colors.primary }]}>{uploadedCount}/{documents.length}</Text></View>
         <Text style={[styles.uploadHint, { color: colors.muted }]}>اضغط على كل خانة لاختيار صورة أو ملف PDF من جهازك. لا يكفي تحديد الخانة فقط.</Text>
+        {latestDocuments.map((d) => <Text key={d.id} style={{ color: d.status === "rejected" ? colors.error : colors.muted }}>{documents.find((item) => item[0] === d.documentType)?.[1]}: {d.status}{d.expiresAt ? ` · ينتهي ${new Date(d.expiresAt).toLocaleDateString("ar-EG")}` : ""}{d.reviewReason ? ` · ${d.reviewReason}` : ""}</Text>)}
         {documents.map(([id, title, hint]) => {
           const file = uploadedFiles[id];
           const done = Boolean(file);
@@ -88,9 +145,35 @@ export default function DriverScreen() {
         })}
 
         <View style={[styles.reviewCard, { backgroundColor: submitted ? "#FFF5DD" : "#E8F5EE" }]}><Text style={styles.reviewIcon}>{submitted ? "⏳" : "🛡️"}</Text><View style={styles.reviewCopy}><Text style={[styles.reviewTitle, { color: colors.foreground }]}>{statusLabel}</Text><Text style={[styles.reviewText, { color: colors.muted }]}>{submitted ? "هنراجع مستنداتك ونرد عليك قريباً." : "السائقين لا يمكنهم استقبال مشاوير قبل الموافقة."}</Text></View></View>
-        <View style={[styles.subscriptionCard, { backgroundColor: subscriptionStatus === "approved" ? "#E8F5EE" : "#FFF5DD" }]}><Text style={styles.subscriptionIcon}>{subscriptionStatus === "approved" ? "✅" : "🔒"}</Text><View style={styles.subscriptionCopy}><Text style={[styles.subscriptionTitle, { color: colors.foreground }]}>{subscriptionStatus === "approved" ? "الاشتراك معتمد" : subscriptionStatus === "rejected" ? "الاشتراك مرفوض" : "استقبال المشاوير متوقف"}</Text><Text style={[styles.subscriptionText, { color: colors.muted }]}>{subscriptionStatus === "approved" ? "تقدر تستقبل طلبات الرحلات الآن." : "لا يمكن استقبال طلبات قبل اعتماد إيصال الاشتراك."}</Text></View><Pressable disabled={subscriptionStatus !== "approved"} onPress={async () => { const nextOnline = !driverOnline; if (!nextOnline) { availabilityMutation.mutate({ isOnline: false }, { onSuccess: toggleDriverOnline }); return; } const permission = await Location.requestForegroundPermissionsAsync(); if (permission.status !== "granted") return; const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }); availabilityMutation.mutate({ isOnline: true, lat: location.coords.latitude, lng: location.coords.longitude }, { onSuccess: toggleDriverOnline }); }} style={[styles.onlineToggle, { backgroundColor: driverOnline ? colors.success : colors.surface, borderColor: subscriptionStatus === "approved" ? colors.success : colors.border }]}><Text style={[styles.onlineText, { color: driverOnline ? "#FFFFFF" : colors.muted }]}>{driverOnline ? "متصل" : "غير متصل"}</Text></Pressable></View>
-        {vehicle === "car" && (driverRequestsQuery.data ?? []).length > 0 && <View style={[styles.requestsCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><Text style={[styles.sectionTitle, { color: colors.foreground }]}>طلبات السيارات المفتوحة</Text>{(driverRequestsQuery.data ?? []).map((request) => { const input = offerInputs[request.id] ?? { price: "", eta: "" }; return <View key={request.id} style={[styles.requestRow, { borderTopColor: colors.border }]}><Text style={[styles.requestTitle, { color: colors.foreground }]}>{request.pickupLabel} ← {request.destinationLabel}</Text><Text style={[styles.requestMeta, { color: colors.muted }]}>رقم الرحلة {request.bookingCode}</Text><View style={styles.offerFields}><TextInput value={input.price} onChangeText={(price) => setOfferInputs((current) => ({ ...current, [request.id]: { ...input, price } }))} placeholder="السعر" keyboardType="number-pad" style={[styles.offerInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /><TextInput value={input.eta} onChangeText={(eta) => setOfferInputs((current) => ({ ...current, [request.id]: { ...input, eta } }))} placeholder="الدقائق" keyboardType="number-pad" style={[styles.offerInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]} /><Pressable disabled={!input.price || !input.eta || offerMutation.isPending} onPress={() => offerMutation.mutate({ rideId: request.id, offeredPrice: Number(input.price), etaMinutes: Number(input.eta) })} style={[styles.offerButton, { backgroundColor: colors.primary }, (!input.price || !input.eta) && styles.disabled]}><Text style={styles.offerButtonText}>إرسال العرض</Text></Pressable></View></View>; })}</View>}
-        <Pressable disabled={!vehicle || !complete || submitted} onPress={() => setSubmitted(true)} style={[styles.primaryButton, { backgroundColor: colors.primary }, (!vehicle || !complete || submitted) && styles.disabled]}><Text style={styles.primaryText}>{submitted ? "تم إرسال الطلب" : "إرسال للمراجعة"}</Text></Pressable>
+        <View style={[styles.subscriptionCard, { backgroundColor: subscriptionStatus === "approved" ? "#E8F5EE" : "#FFF5DD" }]}>
+          <View style={styles.subscriptionCopy}><Text style={[styles.subscriptionTitle, { color: colors.foreground }]}>الاشتراك: {subscriptionStatus} · الحساب: {profile?.accountStatus ?? "غير مكتمل"}</Text></View>
+          <Pressable disabled={busy || (subscriptionStatus !== "approved" && !driverOnline)} onPress={() => void run(async () => {
+            if (driverOnline) { await availabilityMutation.mutateAsync({ isOnline: false }); return; }
+            if (Platform.OS === "web") {
+              if (!navigator.geolocation) throw new Error("المتصفح لا يدعم تحديد الموقع");
+              const position = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 }));
+              await availabilityMutation.mutateAsync({ isOnline: true, lat: position.coords.latitude, lng: position.coords.longitude });
+              return;
+            }
+            const permission = await Location.requestForegroundPermissionsAsync();
+            if (permission.status !== "granted") throw new Error("اسمح بالوصول إلى الموقع من إعدادات الجهاز");
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            await availabilityMutation.mutateAsync({ isOnline: true, lat: location.coords.latitude, lng: location.coords.longitude });
+          })} style={[styles.onlineToggle, { borderColor: colors.border }]}><Text style={{ color: colors.foreground }}>{driverOnline ? "متصل — إيقاف" : "اتصال"}</Text></Pressable>
+        </View>
+        {profile?.subscriptionStartsAt && profile?.subscriptionEndsAt && <Text style={{ color: colors.muted }}>مدة الاشتراك: {new Date(profile.subscriptionStartsAt).toLocaleDateString("ar-EG")} — {new Date(profile.subscriptionEndsAt).toLocaleDateString("ar-EG")}</Text>}
+        {(driverRequestsQuery.data ?? []).map((request) => {
+          const input = offerInputs[request.id] ?? { price: "", eta: "" };
+          return <View key={request.id} style={[styles.requestsCard, { borderColor: colors.border }]}>
+            <Text style={{ color: colors.foreground }}>{request.pickupLabel} ← {request.destinationLabel}</Text>
+            <View style={styles.offerFields}>
+              <TextInput value={input.price} onChangeText={(price) => setOfferInputs((prev) => ({ ...prev, [request.id]: { ...input, price } }))} placeholder="السعر" keyboardType="number-pad" style={[styles.offerInput, { color: colors.foreground }]} />
+              <TextInput value={input.eta} onChangeText={(eta) => setOfferInputs((prev) => ({ ...prev, [request.id]: { ...input, eta } }))} placeholder="الدقائق" keyboardType="number-pad" style={[styles.offerInput, { color: colors.foreground }]} />
+              <Pressable disabled={busy || !input.price || !input.eta} onPress={() => void run(() => pendingOperation(me.data!.id, `bid-${request.id}`, { rideId: request.id, offeredPrice: Number(input.price), etaMinutes: Number(input.eta) }, (payload) => offerMutation.mutateAsync(payload)))}><Text style={{ color: colors.primary }}>إرسال العرض</Text></Pressable>
+            </View>
+          </View>;
+        })}
+        <Pressable disabled={busy || (!vehicle && !profile?.vehicleType) || !complete} onPress={() => void run(() => submit.mutateAsync({ vehicleType: vehicle ?? profile!.vehicleType, vehicleNumber: vehicleNumber.trim() || profile?.vehicleNumber || "" }))} style={[styles.primaryButton, { backgroundColor: colors.primary }, (!complete || busy) && styles.disabled]}><Text style={styles.primaryText}>{submitted ? "تحديث طلب المراجعة" : "إرسال للمراجعة"}</Text></Pressable>
       </ScrollView>
     </ScreenContainer>
   );

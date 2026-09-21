@@ -30,12 +30,7 @@ const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserI
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
-    console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
-    if (!ENV.oAuthServerUrl) {
-      console.error(
-        "[OAuth] ERROR: OAUTH_SERVER_URL is not configured! Set OAUTH_SERVER_URL environment variable.",
-      );
-    }
+    // Legacy rollback client only. Missing Manus config is expected in staging.
   }
 
   private decodeState(state: string): string {
@@ -204,7 +199,7 @@ class SDKServer {
         name,
       };
     } catch (error) {
-      console.warn("[Auth] Session verification failed", String(error));
+      console.warn("[Auth] Legacy session verification failed");
       return null;
     }
   }
@@ -232,6 +227,12 @@ class SDKServer {
   }
 
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
+    return (await (await import("../auth/service")).authenticate(req)).user;
+  }
+
+  private async legacyAuthenticateRequestDisabled(req: Request): Promise<AuthenticatedUser> {
+    throw ForbiddenError("Legacy authentication disabled");
+    /* Rollback reference only; never reachable in staging.
     // Regular authentication flow
     const authHeader = req.headers.authorization || req.headers.Authorization;
     let token: string | undefined;
@@ -288,6 +289,7 @@ class SDKServer {
     });
 
     return user;
+    */
   }
 }
 

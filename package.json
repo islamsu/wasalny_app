@@ -58,6 +58,8 @@
     "expo-video": "~3.0.16",
     "expo-web-browser": "~15.0.11",
     "express": "^4.22.1",
+    "firebase": "^12.19.0",
+    "firebase-admin": "^14.4.0",
     "jose": "6.1.0",
     "mysql2": "^3.16.0",
     "nativewind": "^4.2.1",

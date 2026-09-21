@@ -1,5 +1,13 @@
 # Wasalny Security Audit
 
+## Current continuous-execution checkpoint
+
+**NO-GO — 48/100.** The integrated auth/business security review and corrections,
+executed tests, and remaining provider/admin/deployment limitations are recorded
+in [current evidence](docs/continuous-readiness-evidence.md). Sensitive admin
+writes remain fail-closed. Mocked auth tests are not real Firebase or device evidence.
+The dated sections below are historical.
+
 ## Latest security status — 20 September 2026
 
 **NO-GO — overall readiness remains 48/100.** The new evidence verifies database transport and schema deployment in the user-confirmed dedicated non-production `wasalny_staging` database only. Production was not touched.

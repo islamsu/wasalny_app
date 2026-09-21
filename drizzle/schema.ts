@@ -116,6 +116,9 @@ export const driverProfiles = mysqlTable("driverProfiles", {
   verifiedAt: timestamp("verifiedAt"),
   verifiedBy: int("verifiedBy").references(() => users.id, { onDelete: "restrict", onUpdate: "restrict" }),
   subscriptionStatus: mysqlEnum("subscriptionStatus", ["unpaid", "pending", "approved", "rejected"]).default("unpaid").notNull(),
+  subscriptionStartsAt: timestamp("subscriptionStartsAt"),
+  subscriptionEndsAt: timestamp("subscriptionEndsAt"),
+  onboardingSubmittedAt: timestamp("onboardingSubmittedAt"),
   isOnline: boolean("isOnline").default(false).notNull(),
   lastLat: double("lastLat"),
   lastLng: double("lastLng"),
@@ -173,6 +176,8 @@ export const driverDocuments = mysqlTable("driverDocuments", {
   mimeType: varchar("mimeType", { length: 128 }).notNull(),
   storageKey: varchar("storageKey", { length: 512 }).notNull(),
   storageUrl: varchar("storageUrl", { length: 1024 }).notNull(),
+  validFrom: timestamp("validFrom"),
+  expiresAt: timestamp("expiresAt"),
   status: mysqlEnum("status", ["pending", "approved", "rejected"]).default("pending").notNull(),
   reviewReason: text("reviewReason"),
   reviewedBy: int("reviewedBy"),
@@ -250,3 +255,13 @@ export const auditLogs = mysqlTable("auditLogs", {
 
 export type AdminSetting = typeof adminSettings.$inferSelect;
 export type AuditLog = typeof auditLogs.$inferSelect;
+
+export const businessIdempotency = mysqlTable("businessIdempotency", {
+  id: int("id").autoincrement().primaryKey(),
+  actorUserId: int("actorUserId").notNull().references(() => users.id),
+  operation: varchar("operation", { length: 64 }).notNull(),
+  requestKey: varchar("requestKey", { length: 128 }).notNull(),
+  fingerprint: varchar("fingerprint", { length: 64 }).notNull(),
+  response: text("response"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (table) => ({ scopeUnique: uniqueIndex("business_idempotency_scope").on(table.actorUserId, table.operation, table.requestKey) }));

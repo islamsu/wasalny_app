@@ -8,6 +8,7 @@ import {
   Text,
   View,
   Platform,
+  TextInput,
 } from "react-native";
 import NativeMap from "@/components/native-map";
 
@@ -17,6 +18,7 @@ import { router } from "expo-router";
 import { useWasalnyState } from "@/lib/wasalny-state";
 import { useThemeContext } from "@/lib/theme-provider";
 import { trpc } from "@/lib/trpc";
+import { pendingOperation } from "@/lib/pending-operation";
 
 const vehicleOptions = [
   { id: "toktok", icon: "🛺", title: "اطلب توك توك", subtitle: "للمشاوير القريبة" },
@@ -35,20 +37,42 @@ export default function HomeScreen() {
   const [vehicle, setVehicle] = useState<VehicleId | null>(null);
   const [stage, setStage] = useState<RideStage>("idle");
   const [showProfile, setShowProfile] = useState(false);
-  const [locationLabel, setLocationLabel] = useState("مدينة نصر، القاهرة");
+  const [locationLabel, setLocationLabel] = useState("حدد موقع الركوب");
   const [locationStatus, setLocationStatus] = useState<"idle" | "detecting" | "ready" | "denied">("idle");
   const [selectedNearbyDriver, setSelectedNearbyDriver] = useState<string | null>(null);
   const [coordinates, setCoordinates] = useState({ latitude: 30.0444, longitude: 31.2357 });
   const [createdRideId, setCreatedRideId] = useState<number | null>(null);
+  const me = trpc.auth.me.useQuery();
+  const [destination, setDestination] = useState("");
+  const [operationError, setOperationError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const current = trpc.rides.current.useQuery(undefined, { enabled: me.data?.appRole === "family", refetchInterval: 5000, retry: false });
+  const detail = trpc.rides.detail.useQuery({ id: createdRideId ?? 0 }, { enabled: !!createdRideId && me.data?.appRole === "family", refetchInterval: 5000, retry: false });
+  const serverRide = detail.data ?? current.data?.[0];
+  useEffect(() => { setCreatedRideId(null); setStage("idle"); }, [me.data?.id]);
+  useEffect(() => {
+    if (!serverRide) return;
+    setCreatedRideId(serverRide.id);
+    setVehicle(serverRide.vehicleType as VehicleId);
+    setStage(serverRide.status === "completed" ? "complete" : serverRide.status === "cancelled" ? "idle" : ["accepted", "arriving", "active"].includes(serverRide.status) ? "active" : "matching");
+  }, [serverRide]);
+  const run = async (action: () => Promise<unknown>) => {
+    if (busy) return;
+    setBusy(true); setOperationError("");
+    try { await action(); await Promise.all([current.refetch(), createdRideId ? detail.refetch() : Promise.resolve()]); }
+    catch (error) { setOperationError(error instanceof Error ? error.message : "تعذر تنفيذ العملية"); }
+    finally { setBusy(false); }
+  };
+  const cancelRide = () => { if (createdRideId && me.data) void run(() => pendingOperation(me.data!.id, `cancel-${createdRideId}`, { id: createdRideId, status: "cancelled" as const }, (input) => rideStatusMutation.mutateAsync(input))); };
   const createRideMutation = trpc.rides.create.useMutation();
   const favoritesQuery = trpc.favorites.list.useQuery(undefined, { retry: false });
   const addFavoriteMutation = trpc.favorites.add.useMutation({ onSuccess: () => favoritesQuery.refetch() });
   const removeFavoriteMutation = trpc.favorites.remove.useMutation({ onSuccess: () => favoritesQuery.refetch() });
-  const offersQuery = trpc.rides.offers.list.useQuery({ rideId: createdRideId ?? 0 }, { enabled: Boolean(createdRideId), retry: false });
-  const selectOfferMutation = trpc.rides.offers.select.useMutation({ onSuccess: () => { offersQuery.refetch(); setStage("active"); } });
+  const offersQuery = trpc.rides.offers.list.useQuery({ rideId: createdRideId ?? 0 }, { enabled: Boolean(createdRideId), retry: false, refetchInterval: 5000 });
+  const selectOfferMutation = trpc.rides.offers.select.useMutation();
   const ratingMutation = trpc.ratings.create.useMutation();
   const rideStatusMutation = trpc.rides.status.useMutation();
-  const nearbyDriversQuery = trpc.drivers.nearby.useQuery({ lat: coordinates.latitude, lng: coordinates.longitude }, { retry: false, refetchInterval: 20_000 });
+  const nearbyDriversQuery = trpc.drivers.nearby.useQuery({ lat: coordinates.latitude, lng: coordinates.longitude }, { enabled: locationStatus === "ready" && me.data?.appRole === "family", retry: false, refetchInterval: 20_000 });
   const nearbyDrivers = (nearbyDriversQuery.data ?? []).map((driver) => ({ id: String(driver.userId), vehicle: driver.vehicleType, name: "سائق قريب", distanceKm: driver.distanceKm }));
 
   const selectedVehicle = useMemo(
@@ -69,6 +93,15 @@ export default function HomeScreen() {
 
   const detectLocation = async () => {
     setLocationStatus("detecting");
+    try {
+    if (Platform.OS === "web") {
+      if (!navigator.geolocation) throw new Error("المتصفح لا يدعم تحديد الموقع");
+      const current = await new Promise<GeolocationPosition>((resolve, reject) => navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 }));
+      setCoordinates({ latitude: current.coords.latitude, longitude: current.coords.longitude });
+      setLocationLabel(`${current.coords.latitude.toFixed(5)}, ${current.coords.longitude.toFixed(5)}`);
+      setLocationStatus("ready");
+      return;
+    }
     const permission = await Location.requestForegroundPermissionsAsync();
     if (permission.status !== "granted") { setLocationStatus("denied"); return; }
     const current = await Location.getCurrentPositionAsync({});
@@ -78,6 +111,7 @@ export default function HomeScreen() {
     const readableLocation = place ? [place.district, place.city, place.region].filter(Boolean).join("، ") : `${current.coords.latitude.toFixed(4)}، ${current.coords.longitude.toFixed(4)}`;
     setLocationLabel(readableLocation);
     setLocationStatus("ready");
+    } catch (error) { setLocationStatus("denied"); setOperationError(error instanceof Error ? error.message : "تعذر تحديد الموقع"); }
   };
 
   return (
@@ -170,14 +204,8 @@ export default function HomeScreen() {
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>آخر مشوار</Text>
           <Text style={[styles.seeAll, { color: colors.primary }]}>عرض الكل</Text>
         </View>
-        <View style={[styles.recentCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.recentIcon, { backgroundColor: "#E8F5EE" }]}><Text>🚗</Text></View>
-          <View style={styles.recentCopy}>
-            <Text style={[styles.recentTitle, { color: colors.foreground }]}>مدينة نصر ← عباس العقاد</Text>
-            <Text style={[styles.recentMeta, { color: colors.muted }]}>الأحد، ١١ أغسطس · نقدي</Text>
-          </View>
-          <Text style={[styles.recentFare, { color: colors.foreground }]}>٤٥ ج.م</Text>
-        </View>
+        <Pressable onPress={() => router.push("/history")}><Text style={{ color: colors.primary }}>افتح سجل مشاويرك</Text></Pressable>
+        {!!operationError && <Text accessibilityRole="alert" style={{ color: colors.error }}>{operationError}</Text>}
       </ScrollView>
 
       <Modal animationType="slide" transparent visible={stage !== "idle"} onRequestClose={resetRide}>
@@ -185,17 +213,25 @@ export default function HomeScreen() {
           <View style={[styles.sheet, { backgroundColor: colors.background }]}>
             <View style={styles.sheetHandle} />
             {stage === "request" && selectedVehicle ? (
-              <RideRequestSheet colors={colors} selectedVehicle={selectedVehicle} onBack={resetRide} onRequest={() => { createRideMutation.mutate({ vehicleType: selectedVehicle.id === "fast" ? "fast" : selectedVehicle.id, pickupLabel: locationLabel, destinationLabel: "اختار وجهتك من الخريطة", pickupLat: coordinates.latitude, pickupLng: coordinates.longitude, estimatedFare: selectedVehicle.id === "toktok" ? 35 : 55, etaMinutes: 8 }, { onSuccess: (ride) => { setCreatedRideId(ride?.id ?? null); setStage("matching"); } }); }} />
+              <><TextInput placeholder="عنوان الوجهة" value={destination} onChangeText={setDestination} style={{ color: colors.foreground, textAlign: "right" }} /><RideRequestSheet colors={colors} selectedVehicle={selectedVehicle} pickupLabel={locationLabel} destination={destination} onBack={resetRide} onRequest={() => void run(async () => {
+                if (!me.data) throw new Error("سجل الدخول أولاً");
+                if (locationStatus !== "ready") throw new Error("حدد موقع الركوب الحقيقي أولاً");
+                if (!destination.trim()) throw new Error("أدخل عنوان الوجهة");
+                const ride = await pendingOperation(me.data.id, "create", { vehicleType: selectedVehicle.id, pickupLabel: locationLabel, destinationLabel: destination.trim(), pickupLat: coordinates.latitude, pickupLng: coordinates.longitude }, (input) => createRideMutation.mutateAsync(input));
+                if (ride) setCreatedRideId(ride.id);
+              })} /></>
             ) : null}
             {stage === "matching" ? (
-              selectedVehicle?.id === "car" && (offersQuery.data ?? []).length > 0 ? <OffersSheet colors={colors} offers={offersQuery.data ?? []} onCancel={resetRide} onSelect={(offerId: number) => createdRideId && selectOfferMutation.mutate({ rideId: createdRideId, offerId })} /> : <MatchingSheet colors={colors} selectedVehicle={selectedVehicle} onCancel={resetRide} onMatched={() => { if (createdRideId) rideStatusMutation.mutate({ id: createdRideId, status: "accepted" }, { onSuccess: () => setStage("active") }); else setStage("active"); }} />
+              (offersQuery.data ?? []).length > 0 ? <OffersSheet colors={colors} offers={offersQuery.data ?? []} onCancel={cancelRide} onSelect={(offerId: number) => me.data && createdRideId && void run(() => pendingOperation(me.data!.id, `select-${createdRideId}`, { rideId: createdRideId, offerId }, (input) => selectOfferMutation.mutateAsync(input)))} /> : <MatchingSheet colors={colors} selectedVehicle={selectedVehicle} onCancel={cancelRide} />
             ) : null}
             {stage === "active" ? (
-              <ActiveRideSheet colors={colors} onFinish={() => { if (createdRideId) rideStatusMutation.mutate({ id: createdRideId, status: "active" }, { onSuccess: () => rideStatusMutation.mutate({ id: createdRideId, status: "completed" }, { onSuccess: () => setStage("complete") }) }); else setStage("complete"); }} />
+              <><Text style={{ color: colors.foreground }}>حالة الرحلة: {serverRide?.status} · {serverRide?.bookingCode}</Text><Text style={{ color: colors.muted }}>يحدّث السائق حالة الرحلة. لا تتوفر مشاركة GPS حية حالياً.</Text>{serverRide?.status !== "active" && <Pressable onPress={cancelRide}><Text style={{ color: colors.error }}>إلغاء الرحلة</Text></Pressable>}</>
             ) : null}
             {stage === "complete" ? (
-              <CompleteSheet colors={colors} onDone={resetRide} onRate={(rating: number) => { if (createdRideId) ratingMutation.mutate({ rideId: createdRideId, rating }); }} />
+              <CompleteSheet colors={colors} onDone={() => { setCreatedRideId(null); resetRide(); }} onRate={(rating: number) => { if (createdRideId && me.data) void run(() => pendingOperation(me.data!.id, `rating-${createdRideId}`, { rideId: createdRideId, rating }, (input) => ratingMutation.mutateAsync(input))); }} />
             ) : null}
+            {busy && <Text style={{ color: colors.muted }}>جاري الحفظ…</Text>}
+            {!!(operationError || current.error || detail.error || offersQuery.error) && <Text accessibilityRole="alert" style={{ color: colors.error }}>{operationError || current.error?.message || detail.error?.message || offersQuery.error?.message}</Text>}
           </View>
         </View>
       </Modal>
@@ -222,7 +258,7 @@ export default function HomeScreen() {
   );
 }
 
-function RideRequestSheet({ colors, selectedVehicle, onBack, onRequest }: any) {
+function RideRequestSheet({ colors, selectedVehicle, pickupLabel, destination, onBack, onRequest }: any) {
   return <>
     <Text style={[styles.sheetEyebrow, { color: colors.primary }]}>طلب مشوار جديد</Text>
     <Text style={[styles.sheetTitle, { color: colors.foreground }]}>راجع تفاصيل المشوار</Text>
@@ -230,21 +266,18 @@ function RideRequestSheet({ colors, selectedVehicle, onBack, onRequest }: any) {
     <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       <Text style={styles.summaryIcon}>{selectedVehicle.icon}</Text><View style={styles.summaryCopy}><Text style={[styles.summaryTitle, { color: colors.foreground }]}>{selectedVehicle.title}</Text><Text style={[styles.summaryMeta, { color: colors.muted }]}>الدفع نقدي عند الوصول</Text></View><Text style={[styles.summaryCheck, { color: colors.success }]}>✓</Text>
     </View>
-    <View style={[styles.routeRow, { borderBottomColor: colors.border }]}><View style={[styles.routeDot, { backgroundColor: colors.primary }]} /><View><Text style={[styles.routeLabel, { color: colors.muted }]}>من</Text><Text style={[styles.routeValue, { color: colors.foreground }]}>مدينة نصر، القاهرة</Text></View></View>
-    <View style={[styles.routeRow, { borderBottomColor: colors.border }]}><View style={[styles.routeDot, { backgroundColor: colors.warning }]} /><View><Text style={[styles.routeLabel, { color: colors.muted }]}>إلى</Text><Text style={[styles.routeValue, { color: colors.foreground }]}>اختار وجهتك من الخريطة</Text></View></View>
+    <View style={styles.routeRow}><Text style={{ color: colors.foreground }}>{pickupLabel} ← {destination}</Text></View>
     <Pressable onPress={onRequest} style={({ pressed }) => [styles.primaryButton, { backgroundColor: colors.primary }, pressed && styles.pressed]}><Text style={styles.primaryButtonText}>اطلب الآن</Text></Pressable>
     <Pressable onPress={onBack} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.muted }]}>رجوع</Text></Pressable>
   </>;
 }
 
-function MatchingSheet({ colors, selectedVehicle, onCancel, onMatched }: any) {
+function MatchingSheet({ colors, selectedVehicle, onCancel }: any) {
   return <>
     <View style={[styles.matchingCircle, { backgroundColor: "#E8F5EE" }]}><Text style={styles.matchingEmoji}>{selectedVehicle?.icon ?? "⚡"}</Text></View>
     <Text style={[styles.sheetTitle, styles.centerText, { color: colors.foreground }]}>بندور لك على أقرب سائق</Text>
-    <Text style={[styles.sheetSubtitle, styles.centerText, { color: colors.muted }]}>هنكلمه واحد واحد عشان توصلك أسرع وسيلة</Text>
-    <View style={[styles.progressTrack, { backgroundColor: colors.border }]}><View style={[styles.progressFill, { backgroundColor: colors.primary }]} /></View>
-    <Text style={[styles.matchingHint, { color: colors.primary }]}>جاري التواصل مع أول سائق قريب...</Text>
-    <Pressable onPress={onMatched} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>محاكاة قبول السائق</Text></Pressable>
+    <Text style={[styles.sheetSubtitle, styles.centerText, { color: colors.muted }]}>الطلب مسجل. ننتظر عروض السائقين.</Text>
+    <Text style={[styles.matchingHint, { color: colors.primary }]}>تُحدّث حالة الطلب من الخادم تلقائياً</Text>
     <Pressable onPress={onCancel} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.muted }]}>إلغاء الطلب</Text></Pressable>
   </>;
 }
@@ -253,27 +286,11 @@ function OffersSheet({ colors, offers, onCancel, onSelect }: any) {
   return <><Text style={[styles.sheetEyebrow, { color: colors.primary }]}>عروض السائقين</Text><Text style={[styles.sheetTitle, { color: colors.foreground }]}>اختار العرض الأنسب</Text><Text style={[styles.sheetSubtitle, { color: colors.muted }]}>قارن السعر ووقت الوصول قبل اختيار السائق</Text>{offers.map((offer: any) => <View key={offer.id} style={[styles.offerCard, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={styles.offerCopy}><Text style={[styles.offerDriver, { color: colors.foreground }]}>{offer.driverName ?? "سائق موثق"}</Text><Text style={[styles.offerMeta, { color: colors.muted }]}>وصول خلال {offer.etaMinutes} دقيقة · {offer.vehicleNumber ?? "سيارة"}</Text></View><Text style={[styles.offerPrice, { color: colors.primary }]}>{offer.offeredPrice} ج.م</Text><Pressable onPress={() => onSelect(offer.id)} style={[styles.offerSelect, { backgroundColor: colors.primary }]}><Text style={styles.offerSelectText}>اختيار</Text></Pressable></View>)}<Pressable onPress={onCancel} style={styles.cancelButton}><Text style={[styles.cancelText, { color: colors.muted }]}>إلغاء الطلب</Text></Pressable></>;
 }
 
-function ActiveRideSheet({ colors, onFinish }: any) {
-  const [progress, setProgress] = useState(0);
-  useEffect(() => {
-    const timer = setInterval(() => setProgress((current) => (current >= 92 ? 0 : current + 8)), 3000);
-    return () => clearInterval(timer);
-  }, []);
-  return <>
-    <View style={styles.activeHeader}><View><Text style={[styles.sheetEyebrow, { color: colors.success }]}>السائق في الطريق · تحديث مباشر</Text><Text style={[styles.sheetTitle, { color: colors.foreground }]}>محمود السيد</Text><Text style={[styles.sheetSubtitle, { color: colors.muted }]}>🚗 سيارة · أ ب ج ١٢٣٤ · ٤.٩ ★</Text></View><View style={[styles.driverAvatar, { backgroundColor: "#DDEDE4" }]}><Text style={styles.driverEmoji}>👨🏻</Text></View></View>
-    <View style={[styles.activeMap, { backgroundColor: colors.surface, borderColor: colors.border }]}><View style={[styles.mapRoad, styles.roadFour]} /><View style={[styles.mapRoad, styles.roadFive]} /><View style={[styles.routeTrace, { backgroundColor: colors.primary, width: `${Math.max(22, progress)}%` }]} /><View style={[styles.livePin, { backgroundColor: colors.primary, left: `${12 + progress * 0.72}%` }]}><Text style={styles.livePinText}>🚗</Text></View><Text style={[styles.etaText, { color: colors.foreground }]}>٤ دقائق</Text><Text style={[styles.etaLabel, { color: colors.muted }]}>وقت الوصول المتوقع · GPS حي</Text></View>
-    <View style={styles.tripInfoRow}><View><Text style={[styles.infoLabel, { color: colors.muted }]}>رمز المشوار</Text><Text style={[styles.tripPin, { color: colors.foreground }]}>٤٨٢٧</Text></View><View><Text style={[styles.infoLabel, { color: colors.muted }]}>المسافة</Text><Text style={[styles.tripPin, { color: colors.foreground }]}>٢٫٣ كم</Text></View><View><Text style={[styles.infoLabel, { color: colors.muted }]}>الدفع</Text><Text style={[styles.tripPin, { color: colors.foreground }]}>نقدي</Text></View></View>
-    <View style={styles.safetyActions}><Pressable style={[styles.safetyAction, { borderColor: colors.border }]}><Text>📞</Text><Text style={[styles.safetyActionText, { color: colors.foreground }]}>اتصال</Text></Pressable><Pressable style={[styles.safetyAction, { borderColor: colors.border }]}><Text>↗</Text><Text style={[styles.safetyActionText, { color: colors.foreground }]}>مشاركة</Text></Pressable><Pressable style={[styles.safetyAction, { borderColor: "#F5C7C2" }]}><Text>🆘</Text><Text style={[styles.safetyActionText, { color: colors.error }]}>نجدة</Text></Pressable></View>
-    <Pressable onPress={onFinish} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>إنهاء المشوار</Text></Pressable>
-  </>;
-}
-
 function CompleteSheet({ colors, onDone, onRate }: any) {
   return <>
     <View style={[styles.successCircle, { backgroundColor: "#E8F5EE" }]}><Text style={styles.successEmoji}>✓</Text></View>
     <Text style={[styles.sheetTitle, styles.centerText, { color: colors.foreground }]}>وصلت بالسلامة</Text>
-    <Text style={[styles.sheetSubtitle, styles.centerText, { color: colors.muted }]}>إجمالي المشوار ٤٥ جنيه · الدفع نقدي</Text>
-    <Text style={[styles.ratingLabel, { color: colors.foreground }]}>قيّم تجربتك مع محمود</Text>
+    <Text style={[styles.ratingLabel, { color: colors.foreground }]}>قيّم تجربتك مع السائق</Text>
     <View style={styles.stars}>{[1, 2, 3, 4, 5].map((item) => <Pressable key={item} onPress={() => onRate(item)}><Text style={styles.star}>★</Text></Pressable>)}</View>
     <Pressable onPress={onDone} style={[styles.primaryButton, { backgroundColor: colors.primary }]}><Text style={styles.primaryButtonText}>تم</Text></Pressable>
   </>;

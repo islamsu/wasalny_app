@@ -1,7 +1,7 @@
 import { desc, eq, gt, lt, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { randomUUID } from "node:crypto";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle, type MySql2Database } from "drizzle-orm/mysql2";
 import { adminSettings, auditLogs, driverDocuments, driverProfiles, familyComplaints, familyViolations, favoriteDrivers, InsertUser, notificationEvents, pushTokens, rideOffers, rideRatings, rides, users } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 import { mysqlConnectionOptions } from "./_core/mysql-config";
@@ -9,6 +9,9 @@ import { canSelectCarOffer, validateCarOfferInput } from "../shared/bidding";
 import { storagePut } from "./storage";
 import { summarizeRatings } from "../shared/ratings";
 import { assertActiveUser, assertRole, assertDriverOnboarding, assertDriverDocumentType, assertOperationalDriver, assertSensitiveAdmin } from "./_core/authorization";
+import { businessTransaction, durableCommand } from "./business-transactions";
+import { documentIsCurrent } from "../shared/business-policy";
+import { REQUIRED_DRIVER_DOCUMENTS } from "./_core/authorization";
 
 export const DISPATCH_RADIUS_KM = 5;
 const LOCATION_STALE_AFTER_MS = 15 * 60 * 1000;
@@ -31,8 +34,15 @@ export function isFreshLocation(updatedAt: Date | null) {
   return Boolean(updatedAt && updatedAt.getTime() >= Date.now() - LOCATION_STALE_AFTER_MS);
 }
 
-let _db: ReturnType<typeof drizzle> | null = null;
-export async function getDb() { if (!_db && ENV.databaseUrl) { _db = drizzle({ connection: mysqlConnectionOptions() }); } return _db; }
+let _db: MySql2Database | null = null;
+export async function getDb() { const tx = businessTransaction.getStore(); if (tx) return tx; if (!_db && ENV.databaseUrl) { _db = drizzle({ connection: mysqlConnectionOptions() }); } return _db; }
+
+async function command<T>(actor: number, operation: string, input: { idempotencyKey?: string }, execute: () => Promise<T>) {
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  return durableCommand(db, actor, operation, input.idempotencyKey, input, execute);
+}
+
+function insertId(result: unknown): number { return Number((result as any)[0].insertId); }
 
 export async function upsertUser(user: InsertUser): Promise<void> {
   if (!user.openId) throw new Error("User openId is required for upsert");
@@ -57,9 +67,15 @@ export async function ensureDriverProfile(userId: number, vehicleType: "toktok" 
 
 export async function assertDriverEligibility(userId: number, executor?: Pick<NonNullable<Awaited<ReturnType<typeof getDb>>>, "select">) {
   const db = executor ?? await getDb(); if (!db) throw new Error("Database not available");
-  const user = (await db.select().from(users).where(eq(users.id, userId)).limit(1))[0];
-  const profile = (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, userId)).limit(1))[0];
-  const documents = await db.select().from(driverDocuments).where(eq(driverDocuments.userId, userId));
+  // All eligibility writers lock users -> profile -> documents in that order.
+  // Locking reads avoid pre-lock repeatable-read snapshots.
+  const locking = !!executor || !!businessTransaction.getStore();
+  const userQuery = db.select().from(users).where(eq(users.id, userId));
+  const user = (await (locking ? userQuery.for("update") : userQuery))[0];
+  const profileQuery = db.select().from(driverProfiles).where(eq(driverProfiles.userId, userId));
+  const profile = (await (locking ? profileQuery.for("update") : profileQuery))[0];
+  const documentQuery = db.select().from(driverDocuments).where(eq(driverDocuments.userId, userId));
+  const documents = await (locking ? documentQuery.for("update") : documentQuery);
   // Current policy requires subscription approval for both supported vehicle types.
   assertOperationalDriver(user, profile, documents);
 }
@@ -75,7 +91,11 @@ async function eligibleDriverIds(ids: number[]) {
   }
   return eligible;
 }
-export async function updateDriverAvailability(input: { userId: number; isOnline: boolean; lat?: number; lng?: number }) {
+export async function updateDriverAvailability(input: { userId: number; isOnline: boolean; lat?: number; lng?: number }): Promise<typeof driverProfiles.$inferSelect> {
+  if (!businessTransaction.getStore()) {
+    const root = await getDb(); if (!root) throw new Error("Database not available");
+    return root.transaction(tx => businessTransaction.run(tx, () => updateDriverAvailability(input)), { isolationLevel: "read committed" });
+  }
   await assertDriverEligibility(input.userId);
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -94,7 +114,14 @@ export async function updateDriverAvailability(input: { userId: number; isOnline
   }).where(eq(driverProfiles.userId, input.userId));
   return (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).limit(1))[0];
 }
-export async function createRide(input: typeof rides.$inferInsert) { assertRole(await getUserById(input.familyUserId), "family"); const db = await getDb(); if (!db) throw new Error("Database not available"); const result = await db.insert(rides).values({ ...input, driverUserId: null, status: "requested", acceptedAt: null, completedAt: null }); const created = await db.select().from(rides).where(eq(rides.id, Number((result as any).insertId))).limit(1); return created[0]; }
+export async function createRide(input: Omit<typeof rides.$inferInsert, "bookingCode"> & { idempotencyKey?: string }): Promise<typeof rides.$inferSelect> {
+  assertRole(await getUserById(input.familyUserId), "family");
+  if (!businessTransaction.getStore()) return command(input.familyUserId, "ride.create", input, () => createRide(input));
+  const db = (await getDb())!;
+  const { idempotencyKey, ...values } = input;
+  const result = await db.insert(rides).values({ ...values, bookingCode: `WS-${randomUUID().replaceAll("-", "").slice(0, 28)}`, driverUserId: null, status: "requested", acceptedAt: null, completedAt: null });
+  return (await db.select().from(rides).where(eq(rides.id, insertId(result))))[0];
+}
 export async function getRideForUser(id: number, userId: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(rides).where(and(eq(rides.id, id), eq(rides.familyUserId, userId))).limit(1); return result[0]; }
 export async function getRideById(id: number) { const db = await getDb(); if (!db) return undefined; const result = await db.select().from(rides).where(eq(rides.id, id)).limit(1); return result[0]; }
 export async function listFamilyRides(userId: number) { assertRole(await getUserById(userId), "family"); const db = await getDb(); if (!db) return []; return db.select().from(rides).where(eq(rides.familyUserId, userId)).orderBy(desc(rides.requestedAt)); }
@@ -152,7 +179,9 @@ export async function listOpenCarRequests(driverUserId: number) {
   const candidates = await db.select().from(rides).where(and(eq(rides.vehicleType, "car"), eq(rides.status, "requested"), gt(rides.pickupLat, driver.lastLat - latitudeDelta), lt(rides.pickupLat, driver.lastLat + latitudeDelta), gt(rides.pickupLng, driver.lastLng - longitudeDelta), lt(rides.pickupLng, driver.lastLng + longitudeDelta))).orderBy(desc(rides.requestedAt));
   return candidates.filter((ride) => distanceKm(driver.lastLat!, driver.lastLng!, ride.pickupLat, ride.pickupLng) <= DISPATCH_RADIUS_KM);
 }
-export async function createCarOffer(input: { rideId: number; driverUserId: number; offeredPrice: number; etaMinutes: number }) {
+export async function createCarOffer(input: { rideId: number; driverUserId: number; offeredPrice: number; etaMinutes: number; idempotencyKey?: string }): Promise<typeof rideOffers.$inferSelect> {
+  assertRole(await getUserById(input.driverUserId), "driver");
+  if (!businessTransaction.getStore()) return command(input.driverUserId, "offer.create", input, () => createCarOffer(input));
   await assertDriverEligibility(input.driverUserId);
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -161,11 +190,12 @@ export async function createCarOffer(input: { rideId: number; driverUserId: numb
   if (!driver || driver.lastLat === null || driver.lastLng === null || !isFreshLocation(driver.lastLocationAt)) throw new Error("السائق غير مؤهل لتقديم عرض");
   const activeTrip = (await db.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, input.driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).limit(1))[0];
   if (activeTrip) throw new Error("لا يمكن تقديم عرض أثناء وجود رحلة نشطة");
-  const ride = (await db.select().from(rides).where(eq(rides.id, input.rideId)).limit(1))[0];
+  const ride = (await db.select().from(rides).where(eq(rides.id, input.rideId)).for("update").limit(1))[0];
   if (!ride || ride.vehicleType !== "car" || ride.status !== "requested") throw new Error("الرحلة غير متاحة للعروض");
   if (distanceKm(driver.lastLat, driver.lastLng, ride.pickupLat, ride.pickupLng) > DISPATCH_RADIUS_KM) throw new Error("الرحلة خارج نطاقك الحالي");
-  const result = await db.insert(rideOffers).values(input);
-  return (await db.select().from(rideOffers).where(eq(rideOffers.id, Number((result as any).insertId))).limit(1))[0];
+  const { idempotencyKey, ...values } = input;
+  const result = await db.insert(rideOffers).values(values);
+  return (await db.select().from(rideOffers).where(eq(rideOffers.id, insertId(result))).limit(1))[0];
 }
 export async function listRideOffers(rideId: number, familyUserId: number) {
   assertRole(await getUserById(familyUserId), "family");
@@ -185,49 +215,53 @@ export async function listRideOffers(rideId: number, familyUserId: number) {
     isOnline: driverProfiles.isOnline,
   }).from(rideOffers).innerJoin(users, eq(users.id, rideOffers.driverUserId)).innerJoin(driverProfiles, eq(driverProfiles.userId, rideOffers.driverUserId)).where(eq(rideOffers.rideId, rideId)).orderBy(desc(rideOffers.createdAt));
 }
-export async function selectCarOffer(input: { rideId: number; offerId: number; familyUserId: number }) {
+export async function selectCarOffer(input: { rideId: number; offerId: number; familyUserId: number; idempotencyKey?: string }): Promise<typeof rideOffers.$inferSelect> {
   assertRole(await getUserById(input.familyUserId), "family");
+  if (!businessTransaction.getStore()) return command(input.familyUserId, "offer.select", input, () => selectCarOffer(input));
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  return db.transaction(async (tx) => {
+  // Already inside the durable command transaction. Avoid savepoints: InnoDB
+  // deadlock rollback removes them and can mask the retryable original error.
+  return (async (tx: MySql2Database) => {
     const ride = (await tx.select().from(rides).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId), eq(rides.status, "requested"))).for("update").limit(1))[0];
     if (!ride) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
     const offer = (await tx.select().from(rideOffers).where(and(eq(rideOffers.id, input.offerId), eq(rideOffers.rideId, input.rideId), eq(rideOffers.status, "pending"))).limit(1))[0];
     if (!offer || !canSelectCarOffer({ rideStatus: ride.status, offerStatus: offer.status })) throw new Error("العرض غير متاح");
+    await assertDriverEligibility(offer.driverUserId, tx);
     const driver = (await tx.select().from(driverProfiles).where(and(eq(driverProfiles.userId, offer.driverUserId), eq(driverProfiles.vehicleType, "car"), eq(driverProfiles.isOnline, true), eq(driverProfiles.accountStatus, "active"), eq(driverProfiles.subscriptionStatus, "approved"))).for("update").limit(1))[0];
     if (!driver || driver.lastLat === null || driver.lastLng === null || !isFreshLocation(driver.lastLocationAt)) throw new Error("السائق لم يعد متاحاً");
-    await assertDriverEligibility(offer.driverUserId, tx);
     if (distanceKm(driver.lastLat, driver.lastLng, ride.pickupLat, ride.pickupLng) > DISPATCH_RADIUS_KM) throw new Error("السائق خارج نطاق الرحلة");
-    const activeTrip = (await tx.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, offer.driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).limit(1))[0];
+    const activeTrip = (await tx.select({ id: rides.id }).from(rides).where(and(eq(rides.driverUserId, offer.driverUserId), inArray(rides.status, ACTIVE_RIDE_STATUSES))).for("update").limit(1))[0];
     if (activeTrip) throw new Error("السائق مرتبط برحلة نشطة");
     const rideUpdate = await tx.update(rides).set({ driverUserId: offer.driverUserId, status: "accepted", acceptedAt: new Date() }).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId), eq(rides.status, "requested")));
-    if (Number((rideUpdate as any).affectedRows ?? 0) !== 1) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
+    if (Number((rideUpdate as any)[0].affectedRows ?? 0) !== 1) throw new Error("تم اختيار سائق آخر أو لم تعد الرحلة متاحة");
     await tx.update(rideOffers).set({ status: "rejected" }).where(and(eq(rideOffers.rideId, input.rideId), eq(rideOffers.status, "pending")));
     await tx.update(rideOffers).set({ status: "selected" }).where(eq(rideOffers.id, input.offerId));
     return (await tx.select().from(rideOffers).where(eq(rideOffers.id, input.offerId)).limit(1))[0];
-  });
+  })(db);
 }
-export async function updateRideStatus(input: { id: number; status: "accepted" | "arriving" | "active" | "completed" | "cancelled"; actorUserId: number; actorRole?: "family" | "driver" | "admin" }) {
-  // actorRole is retained only for compatibility with old internal callers;
-  // it is NEVER an authorization input.
+export async function updateRideStatus(input: { id: number; status: "accepted" | "arriving" | "active" | "completed" | "cancelled"; actorUserId: number; idempotencyKey?: string }): Promise<typeof rides.$inferSelect> {
   const actor = await getUserById(input.actorUserId);
   assertActiveUser(actor);
   const actorRole = actor.appRole;
   if (actorRole === "admin") assertSensitiveAdmin(actor);
+  if (!businessTransaction.getStore()) return command(input.actorUserId, `ride.${input.status}`, input, () => updateRideStatus(input));
   if (actorRole === "driver") await assertDriverEligibility(actor.id);
   const db = await getDb(); if (!db) throw new Error("Database not available");
-  const existing = (await db.select().from(rides).where(eq(rides.id, input.id)).limit(1))[0];
+  const existing = (await db.select().from(rides).where(eq(rides.id, input.id)).for("update").limit(1))[0];
   if (!existing) throw new Error("الرحلة غير موجودة");
   if (actorRole === "family" && (existing.familyUserId !== actor.id || input.status !== "cancelled")) throw new TRPCError({ code: "FORBIDDEN", message: "Families may only cancel their own rides" });
   if (actorRole === "driver" && existing.driverUserId !== actor.id) throw new TRPCError({ code: "FORBIDDEN", message: "Ride is not assigned to this driver" });
-  const transitions: Record<string, string[]> = { requested: ["accepted", "cancelled"], accepted: ["arriving", "cancelled"], arriving: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [] };
+  const transitions: Record<string, string[]> = { requested: ["cancelled"], accepted: ["arriving", "cancelled"], arriving: ["active", "cancelled"], active: ["completed", "cancelled"], completed: [], cancelled: [] };
   if (!transitions[existing.status]?.includes(input.status)) throw new Error("انتقال حالة الرحلة غير مسموح");
   await db.update(rides).set({ status: input.status, acceptedAt: input.status === "accepted" ? new Date() : undefined, completedAt: input.status === "completed" ? new Date() : undefined }).where(and(eq(rides.id, input.id), eq(rides.status, existing.status)));
   return (await db.select().from(rides).where(eq(rides.id, input.id)).limit(1))[0];
 }
-export async function createDriverDocument(input: { userId: number; documentType: string; fileName: string; mimeType: string; dataBase64: string }) {
+export async function createDriverDocument(input: { userId: number; documentType: string; fileName: string; mimeType: string; dataBase64: string; validFrom?: string; expiresAt?: string }) {
   assertDriverDocumentType(input.documentType);
   assertDriverOnboarding(await getUserById(input.userId));
+  const validity = { documentType: input.documentType, validFrom: input.validFrom ? new Date(input.validFrom) : null, expiresAt: input.expiresAt ? new Date(input.expiresAt) : null };
+  if (!documentIsCurrent(validity)) throw new TRPCError({ code: "BAD_REQUEST", message: "Supply actual current document validity dates; expiry is required for id/license/vehicle" });
   const db = await getDb(); if (!db) throw new Error("Database not available");
   if (!/^[A-Za-z0-9_-]{1,64}$/.test(input.documentType) || !input.fileName || input.fileName.length > 255 || /[\\/]/.test(input.fileName) || [".", ".."].includes(input.fileName)) throw new Error("Invalid document path");
   if (!input.dataBase64 || input.dataBase64.length > 15_000_000) throw new Error("ملف المستند غير صالح أو كبير جداً");
@@ -236,7 +270,13 @@ export async function createDriverDocument(input: { userId: number; documentType
   await ensureDriverProfile(input.userId);
   // Immutable object keys prevent replacing an already-approved document's bytes.
   const uploaded = await storagePut(`drivers/${input.userId}/${input.documentType}/${randomUUID()}/${input.fileName}`, Buffer.from(input.dataBase64, "base64"), input.mimeType);
-  await db.insert(driverDocuments).values({ userId: input.userId, documentType: input.documentType, fileName: input.fileName, mimeType: input.mimeType, storageKey: uploaded.key, storageUrl: uploaded.url, status: "pending", reviewedBy: null });
+  await db.transaction(async tx => {
+    const actor = (await tx.select().from(users).where(eq(users.id, input.userId)).for("update"))[0];
+    assertDriverOnboarding(actor);
+    await tx.select().from(driverProfiles).where(eq(driverProfiles.userId, input.userId)).for("update");
+    await tx.insert(driverDocuments).values({ ...validity, userId: input.userId, fileName: input.fileName, mimeType: input.mimeType, storageKey: uploaded.key, storageUrl: uploaded.url, status: "pending", reviewedBy: null });
+    await tx.update(driverProfiles).set({ isOnline: false }).where(eq(driverProfiles.userId, input.userId));
+  });
   return (await db.select().from(driverDocuments).where(eq(driverDocuments.storageKey, uploaded.key)).limit(1))[0];
 }
 export async function listDriverDocuments(userId?: number, adminUserId?: number) {
@@ -254,9 +294,52 @@ export async function reviewDriverDocument(input: { documentId: number; status: 
   await db.insert(auditLogs).values({ actorUserId: input.reviewedBy, action: `driver_document_${input.status}`, entityType: "driver_document", entityId: String(input.documentId), beforeValue: JSON.stringify({ status: existing.status, reviewReason: existing.reviewReason }), afterValue: JSON.stringify({ status: input.status, reviewReason: input.reviewReason }), metadata: JSON.stringify({ userId: existing.userId, documentType: existing.documentType }) });
   return (await db.select().from(driverDocuments).where(eq(driverDocuments.id, input.documentId)).limit(1))[0];
 }
-export async function createRideRating(input: { rideId: number; familyUserId: number; rating: number; comment?: string | null }) {
+export async function createRideRating(input: { rideId: number; familyUserId: number; rating: number; comment?: string | null; idempotencyKey?: string }): Promise<typeof rideRatings.$inferSelect> {
   assertRole(await getUserById(input.familyUserId), "family");
-  const db = await getDb(); if (!db) throw new Error("Database not available"); if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) throw new Error("التقييم يجب أن يكون بين 1 و5"); const ride = (await db.select().from(rides).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId))).limit(1))[0]; if (!ride || ride.status !== "completed" || !ride.driverUserId) throw new Error("لا يمكن تقييم هذا المشوار الآن"); const result = await db.insert(rideRatings).values({ rideId: input.rideId, familyUserId: input.familyUserId, driverUserId: ride.driverUserId, rating: input.rating, comment: input.comment ?? null }); return (await db.select().from(rideRatings).where(eq(rideRatings.id, Number((result as any).insertId))).limit(1))[0];
+  if (!businessTransaction.getStore()) return command(input.familyUserId, "rating.create", input, () => createRideRating(input));
+  const db = (await getDb())!;
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) throw new TRPCError({ code: "BAD_REQUEST", message: "Rating must be 1–5" });
+  const ride = (await db.select().from(rides).where(and(eq(rides.id, input.rideId), eq(rides.familyUserId, input.familyUserId))).for("update"))[0];
+  if (!ride || ride.status !== "completed" || !ride.driverUserId) throw new TRPCError({ code: "FORBIDDEN", message: "Only your completed assigned ride can be rated" });
+  const result = await db.insert(rideRatings).values({ rideId: input.rideId, familyUserId: input.familyUserId, driverUserId: ride.driverUserId, rating: input.rating, comment: input.comment ?? null });
+  return (await db.select().from(rideRatings).where(eq(rideRatings.id, insertId(result))))[0];
+}
+
+export async function getOnboarding(userId: number) {
+  assertDriverOnboarding(await getUserById(userId));
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  const profile = (await db.select().from(driverProfiles).where(eq(driverProfiles.userId, userId)))[0] ?? null;
+  const documents = await listDriverDocuments(userId);
+  return { profile, documents, submitted: !!profile?.onboardingSubmittedAt };
+}
+
+export async function submitOnboarding(userId: number, input: { vehicleType: "car" | "toktok"; vehicleNumber: string }) {
+  assertDriverOnboarding(await getUserById(userId));
+  await ensureDriverProfile(userId, input.vehicleType);
+  const db = (await getDb())!;
+  await db.transaction(async tx => {
+    const actor = (await tx.select().from(users).where(eq(users.id, userId)).for("update"))[0];
+    assertDriverOnboarding(actor);
+    const profile = (await tx.select().from(driverProfiles).where(eq(driverProfiles.userId, userId)).for("update"))[0];
+    if (profile.verificationStatus === "approved") throw new TRPCError({ code: "CONFLICT", message: "Approved profiles require administrator review to change" });
+    const documents = await tx.select().from(driverDocuments).where(eq(driverDocuments.userId, userId)).orderBy(desc(driverDocuments.id)).for("update");
+    for (const type of REQUIRED_DRIVER_DOCUMENTS) {
+      const latest = documents.find(document => document.documentType === type);
+      if (!latest || latest.status === "rejected" || !documentIsCurrent(latest)) throw new TRPCError({ code: "BAD_REQUEST", message: `Current document required: ${type}` });
+    }
+    await tx.update(driverProfiles).set({ vehicleType: input.vehicleType, vehicleNumber: input.vehicleNumber, onboardingSubmittedAt: new Date(), verificationStatus: "pending", accountStatus: "pending", isOnline: false }).where(eq(driverProfiles.userId, userId));
+  });
+  return getOnboarding(userId);
+}
+
+export async function recoverRides(userId: number, id?: number) {
+  const actor = await getUserById(userId); assertActiveUser(actor);
+  if (actor.appRole !== "family" && actor.appRole !== "driver") throw new TRPCError({ code: "FORBIDDEN" });
+  const db = await getDb(); if (!db) throw new Error("Database not available");
+  const owner = actor.appRole === "family" ? eq(rides.familyUserId, userId) : eq(rides.driverUserId, userId);
+  const result = await db.select().from(rides).where(and(owner, id === undefined ? inArray(rides.status, ["requested", ...ACTIVE_RIDE_STATUSES]) : eq(rides.id, id))).orderBy(desc(rides.id));
+  if (id !== undefined && !result.length) throw new TRPCError({ code: "NOT_FOUND", message: "Ride not found" });
+  return result;
 }
 export async function listDriverRatings(driverUserId: number) { const db = await getDb(); if (!db) return []; return db.select().from(rideRatings).where(eq(rideRatings.driverUserId, driverUserId)).orderBy(desc(rideRatings.createdAt)); }
 export async function getDriverRatingSummary(driverUserId: number) { const ratings = await listDriverRatings(driverUserId); const summary = summarizeRatings(ratings.map((item) => item.rating)); return { ...summary, ratings }; }

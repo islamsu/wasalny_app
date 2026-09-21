@@ -62,6 +62,10 @@ function buildUserResponse(
 }
 
 export function registerOAuthRoutes(app: Express) {
+  app.all(["/api/oauth/callback", "/api/oauth/mobile", "/api/auth/session"], (_req, res) => {
+    res.status(410).json({ error: "LEGACY_AUTH_DISABLED" });
+  });
+  return; // Legacy code retained for rollback only; no runtime enable switch.
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");

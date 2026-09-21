@@ -44,7 +44,7 @@ describe("Gate 1 real router/procedure policies (unit-mocked persistence)", () =
   });
   it("family ride creation retains internal nearby-driver dispatch lookup", async () => {
     mocks.createRide.mockResolvedValue({ id: 12, familyUserId: 7 });
-    await expect(caller().rides.create({ vehicleType: "car", pickupLabel: "Pickup", destinationLabel: "Destination", pickupLat: 30, pickupLng: 31 })).resolves.toMatchObject({ id: 12 });
+    await expect(caller().rides.create({ idempotencyKey: "test-key-001", vehicleType: "car", pickupLabel: "Pickup", destinationLabel: "Destination", pickupLat: 30, pickupLng: 31 })).resolves.toMatchObject({ id: 12 });
     expect(mocks.listNearbyDrivers).toHaveBeenCalledWith(30, 31);
   });
   it("family can list its own rides", async () => {
@@ -88,7 +88,7 @@ describe("Gate 1 real router/procedure policies (unit-mocked persistence)", () =
   });
   it.each(["id", "license", "vehicle", "photos", "personal", "payment"] as const)("accepts canonical %s upload type", async (documentType) => {
     mocks.createDriverDocument.mockResolvedValue({ status: "pending" });
-    await expect(caller().driverDocuments.upload({ documentType, fileName: "file.pdf", mimeType: "application/pdf", dataBase64: "dGVzdA==" })).resolves.toEqual({ status: "pending" });
+    await expect(caller().driverDocuments.upload({ documentType, fileName: "file.pdf", mimeType: "application/pdf", dataBase64: "dGVzdA==", expiresAt: "2030-01-01T00:00:00.000Z" })).resolves.toEqual({ status: "pending" });
     expect(mocks.createDriverDocument).toHaveBeenCalledWith(expect.objectContaining({ userId: 7, documentType }));
   });
   it("family cannot operate even with client driver intent", async () => {
@@ -101,7 +101,7 @@ describe("Gate 1 real router/procedure policies (unit-mocked persistence)", () =
     expect(mocks.updateDriverAvailability).not.toHaveBeenCalled();
   });
   it("eligible driver passes operational procedure", async () => {
-    mocks.assertDriverEligibility.mockImplementation(async () => assertOperationalDriver({ id: 7, appRole: "driver", userStatus: "active" }, { verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved" }, REQUIRED_DRIVER_DOCUMENTS.map((documentType) => ({ documentType, status: "approved" }))));
+    mocks.assertDriverEligibility.mockImplementation(async () => assertOperationalDriver({ id: 7, appRole: "driver", userStatus: "active" }, { verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved", subscriptionStartsAt: new Date("2020-01-01"), subscriptionEndsAt: new Date("2099-01-01") }, REQUIRED_DRIVER_DOCUMENTS.map((documentType) => ({ documentType, status: "approved", expiresAt: new Date("2099-01-01") }))));
     await expect(caller("driver").profile.availability({ isOnline: true })).resolves.toEqual({ isOnline: true });
     expect(mocks.assertDriverEligibility).toHaveBeenCalledWith(7);
     expect(mocks.updateDriverAvailability).toHaveBeenCalledWith({ userId: 7, isOnline: true });
@@ -112,7 +112,7 @@ describe("Gate 1 real router/procedure policies (unit-mocked persistence)", () =
   });
   it("client actorRole is not forwarded to ride helper", async () => {
     mocks.updateRideStatus.mockResolvedValue({ familyUserId: 7 });
-    await caller().rides.status({ id: 2, status: "cancelled", actorRole: "admin", actorUserId: 999 } as never);
-    expect(mocks.updateRideStatus).toHaveBeenCalledWith({ id: 2, status: "cancelled", actorUserId: 7 });
+    await caller().rides.status({ id: 2, status: "cancelled", idempotencyKey: "test-key-002", actorRole: "admin", actorUserId: 999 } as never);
+    expect(mocks.updateRideStatus).toHaveBeenCalledWith({ id: 2, status: "cancelled", idempotencyKey: "test-key-002", actorUserId: 7 });
   });
 });

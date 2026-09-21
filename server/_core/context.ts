@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import { authenticate } from "../auth/service";
+import { sanitizedAuthError, trpcAuthError } from "../auth/errors";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -12,9 +13,12 @@ export async function createContext(opts: CreateExpressContextOptions): Promise<
   let user: User | null = null;
 
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    user = (await authenticate(opts.req)).user;
   } catch (error) {
-    // Authentication is optional for public procedures.
+    // Only absent/invalid credentials can be anonymous on public procedures.
+    // Provider/configuration/database outages remain sanitized HTTP 503 errors.
+    const safe = sanitizedAuthError(error);
+    if (safe.status !== 401) throw trpcAuthError(safe);
     user = null;
   }
 

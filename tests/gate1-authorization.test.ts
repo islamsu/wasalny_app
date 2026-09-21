@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { assertActiveUser, assertRole, assertDriverOnboarding, assertOperationalDriver, assertDocumentAccess, assertSensitiveAdmin, authorizeProcedure, REQUIRED_DRIVER_DOCUMENTS } from "../server/_core/authorization";
 
 const user = (appRole = "family", userStatus = "active") => ({ id: 1, appRole, userStatus, role: "admin" });
-const driver = { verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved" };
-const documents = REQUIRED_DRIVER_DOCUMENTS.map((documentType, id) => ({ id, documentType, status: "approved" }));
+// Supplied test evidence, not a production duration policy.
+const driver = { verificationStatus: "approved", accountStatus: "active", subscriptionStatus: "approved", subscriptionStartsAt: new Date("2020-01-01"), subscriptionEndsAt: new Date("2099-01-01") };
+const documents = REQUIRED_DRIVER_DOCUMENTS.map((documentType, id) => ({ id, documentType, status: "approved", expiresAt: new Date("2099-01-01") }));
 
 describe("Gate 1 centralized authorization", () => {
   it.each(["family", "driver", "admin"] as const)("allows active %s only its own role", (role) => {

@@ -1,5 +1,13 @@
 # Wasalny Complete Repository Audit
 
+## Current continuous-execution checkpoint
+
+See [current executed evidence](docs/continuous-readiness-evidence.md) for the
+implemented Firebase/session and business-integrity checkpoint, migration 0011,
+local validation and real business-only MySQL concurrency test. Production
+readiness remains **48/100 — NO-GO**. Real provider/device verification is not
+claimed. The dated sections below are retained as historical evidence.
+
 ## Latest audit status — 20 September 2026
 
 **Decision: NO-GO — 48/100.** The latest evidence establishes the empty staging database, TLS connection, and migration/schema baseline only. It does not justify a score increase because no real application workflow was executed. All earlier sections remain as historical evidence.
